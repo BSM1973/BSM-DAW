@@ -1407,7 +1407,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     std::atomic_store(&track.buffer, std::move(newBuffer));
     track.contentRevision.fetch_add(1, std::memory_order_relaxed);
     track.clipId = juce::Uuid().toString();
-    track.clipGain.store(1);track.clipPan.store(0);track.clipPitch.store(0);track.clipReverse.store(false);track.clipMuted.store(false);
+    track.clipGain.store(1);track.clipPan.store(0);std::atomic_store(&track.gainAutomation,ClipAutomationPtr{});std::atomic_store(&track.panAutomation,ClipAutomationPtr{});track.clipPitch.store(0);track.clipReverse.store(false);track.clipMuted.store(false);
     track.clipOffset.store(0);track.clipEnvelopeLength.store(0);track.clipFadeIn.store(0);track.clipFadeOut.store(0);
     track.autoCrossfadeInStart.store(-1);track.autoCrossfadeInEnd.store(-1);
     track.autoCrossfadeOutStart.store(-1);track.autoCrossfadeOutEnd.store(-1);
@@ -1653,6 +1653,34 @@ bool AudioEngine::addAudioClipMetadata(int trackIndex,const AudioClipMetadata& c
     auto clips=getAudioClips(trackIndex);clips.push_back(clip);return replaceAudioClips(trackIndex,clips);
 }
 
+bool AudioEngine::validClipAutomation(const ClipAutomationCurve& curve,bool pan) noexcept
+{
+    if(curve.points.size()<2||curve.points.size()>maxClipAutomationPoints)return false;
+    if(curve.points.front().time!=0.||curve.points.back().time!=1.)return false;
+    double previous=-1.;
+    for(const auto& p:curve.points){
+        if(!std::isfinite(p.time)||p.time<0.||p.time>1.||p.time<=previous||
+           !std::isfinite(p.value)||p.value<(pan?-1.f:0.f)||p.value>(pan?1.f:4.f)||
+           p.shape<0||p.shape>2)return false;
+        previous=p.time;
+    }
+    return true;
+}
+float AudioEngine::evaluateClipAutomation(const ClipAutomationCurve& curve,double time) noexcept
+{
+    const auto& points=curve.points;
+    if(points.empty())return 0.f;
+    if(time<=points.front().time)return points.front().value;
+    if(time>=points.back().time)return points.back().value;
+    const auto right=std::upper_bound(points.begin(),points.end(),time,
+        [](double t,const ClipAutomationPoint& point){return t<point.time;});
+    if(right==points.begin()||right==points.end())return points.back().value;
+    const auto& b=*right;const auto& a=*(right-1);
+    double x=(time-a.time)/(b.time-a.time);
+    if(a.shape==1)x=x*x;
+    else if(a.shape==2)x=x*x*(3.-2.*x);
+    return a.value+(b.value-a.value)*(float)x;
+}
 void AudioEngine::writeAudioClipProperties(juce::XmlElement& element,const AudioClipMetadata& clip)
 {
     element.setAttribute("id",clip.id);
@@ -1664,6 +1692,15 @@ void AudioEngine::writeAudioClipProperties(juce::XmlElement& element,const Audio
     element.setAttribute("trimEnd",clip.trimEndFraction);
     element.setAttribute("clipGain",(double)clip.clipGain);
     element.setAttribute("clipPan",(double)clip.clipPan);
+    auto writeAutomation=[&](const char* tag,const ClipAutomationPtr& curve){
+        if(!curve)return;
+        auto* xml=element.createNewChildElement(tag);xml->setAttribute("relative",curve->relative);
+        for(const auto& point:curve->points){
+            auto* p=xml->createNewChildElement("Point");
+            p->setAttribute("time",point.time);p->setAttribute("value",(double)point.value);p->setAttribute("shape",point.shape);
+        }
+    };
+    writeAutomation("GainAutomation",clip.gainAutomation);writeAutomation("PanAutomation",clip.panAutomation);
     element.setAttribute("pitchSemitones",clip.pitchSemitones);
     element.setAttribute("reverse",clip.reverse);
     element.setAttribute("muted",clip.muted);
@@ -1696,6 +1733,19 @@ AudioEngine::AudioClipMetadata AudioEngine::readAudioClipProperties(const juce::
     clip.trimEndFraction=element.getDoubleAttribute("trimEnd",1.0);
     clip.clipGain=(float)element.getDoubleAttribute("clipGain",1.0);
     clip.clipPan=(float)element.getDoubleAttribute("clipPan",0.0);
+    auto readAutomation=[&](const char* tag,bool pan)->ClipAutomationPtr{
+        auto* xml=element.getChildByName(tag);if(!xml)return {};
+        auto curve=std::make_shared<ClipAutomationCurve>();curve->relative=xml->getBoolAttribute("relative",true);
+        for(auto* p=xml->getFirstChildElement();p;p=p->getNextElement()){
+            if(!p->hasTagName("Point")||!p->hasAttribute("time")||!p->hasAttribute("value")||
+               !p->hasAttribute("shape")||curve->points.size()>=maxClipAutomationPoints)return {};
+            curve->points.push_back({p->getDoubleAttribute("time",-1.),
+                (float)p->getDoubleAttribute("value",5.),p->getIntAttribute("shape",-1)});
+        }
+        return validClipAutomation(*curve,pan)?ClipAutomationPtr(curve):ClipAutomationPtr{};
+    };
+    clip.gainAutomation=readAutomation("GainAutomation",false);
+    clip.panAutomation=readAutomation("PanAutomation",true);
     clip.pitchSemitones=element.getDoubleAttribute("pitchSemitones",0.0);
     clip.reverse=element.getBoolAttribute("reverse",false);
     clip.muted=element.getBoolAttribute("muted",false);
@@ -2251,7 +2301,8 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
                     (timelineSeconds-crossOutStart)/(crossOutEnd-crossOutStart),false);
             return (float)juce::jlimit(0.0,1.0,e);
         };
-        const auto gain = laneGain * track.clipGain.load(); const auto pan = lanePan;
+        const float staticGain=track.clipGain.load();
+        const auto gain = laneGain * staticGain; const auto pan = lanePan;
         const double clipPitchRatio = std::pow(2.0, track.clipPitch.load() / 12.0);
         const bool clipReversed = track.clipReverse.load();
         // Independent cascaded balance: a centred clip is exactly unity.
@@ -2259,6 +2310,25 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
         const float clipPan=track.clipPan.load(std::memory_order_relaxed);
         const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f) * (clipPan>0.f?1.f-clipPan:1.f);
         const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f) * (clipPan<0.f?1.f+clipPan:1.f);
+        const auto gainCurve=std::atomic_load(&track.gainAutomation);
+        const auto panCurve=std::atomic_load(&track.panAutomation);
+        const double clipSamples=(double)juce::jmax<std::int64_t>(1,clipEnd-startSample);
+        auto automatedGains=[&](int sample){
+            if(!gainCurve&&!panCurve)return std::pair<float,float>{leftGain,rightGain};
+            const double phase=juce::jlimit(0.,1.,(sourceOffset+sample)/clipSamples);
+            float g=staticGain,p=clipPan;
+            if(gainCurve){
+                const float v=evaluateClipAutomation(*gainCurve,phase);
+                g=juce::jlimit(0.f,4.f,gainCurve->relative?g*v:v);
+            }
+            if(panCurve){
+                const float v=evaluateClipAutomation(*panCurve,phase);
+                p=juce::jlimit(-1.f,1.f,panCurve->relative?p+v:v);
+            }
+            const float overall=laneGain*g;
+            return std::pair<float,float>{overall*(pan>0.f?1.f-pan:1.f)*(p>0.f?1.f-p:1.f),
+                                         overall*(pan<0.f?1.f+pan:1.f)*(p<0.f?1.f+p:1.f)};
+        };
         const auto sourceChannels = audioBuffer->getNumChannels();
 
         if (!warpActive || rawMarkerCount < 2)
@@ -2270,6 +2340,7 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
             for (int s = 0; s < samplesToMix; ++s)
             {
                 const double localSeconds=(double)(sourceOffset+s)/rate+offsetSeconds;
+                const auto automated=automatedGains(s);
                 const double forwardPosition = localSeconds*rate*sourceStep;
                 const double trimStart=track.clipTrimStart.load()*audioBuffer->getNumSamples();
                 const double trimEnd=track.clipTrimEnd.load()*audioBuffer->getNumSamples();
@@ -2285,9 +2356,9 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
                     return data[i1] + (data[i2] - data[i1]) * frac;
                 };
                 if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
-                    outputChannelData[0][outputOffset + s] += readLinear(0) * leftGain * envelopeAt(localSeconds);
+                    outputChannelData[0][outputOffset + s] += readLinear(0) * automated.first * envelopeAt(localSeconds);
                 if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
-                    outputChannelData[1][outputOffset + s] += readLinear(sourceChannels == 1 ? 0 : 1) * rightGain * envelopeAt(localSeconds);
+                    outputChannelData[1][outputOffset + s] += readLinear(sourceChannels == 1 ? 0 : 1) * automated.second * envelopeAt(localSeconds);
             }
 
             continue;
@@ -2360,6 +2431,7 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
         for (int s = 0; s < samplesToMix; ++s)
         {
             const double targetSeconds = (double)(mixStart - startSample + s) / rate + offsetSeconds;
+            const auto automated=automatedGains(s);
             track.spectralBlend = juce::jlimit(0.0f, 1.0f,
                 track.spectralBlend + (spectralReady ? spectralStep : -spectralStep));
 
@@ -2390,9 +2462,9 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
                         audioBuffer->getNumSamples(),sourceSamplePosition,speed):readWarpedSample(ch,sourceSamplePosition);
                 };
                 if(numOutputChannels>0&&outputChannelData[0])
-                    outputChannelData[0][outputOffset+s]+=repitch(0)*leftGain*envelope;
+                    outputChannelData[0][outputOffset+s]+=repitch(0)*automated.first*envelope;
                 if(numOutputChannels>1&&outputChannelData[1])
-                    outputChannelData[1][outputOffset+s]+=repitch(sourceChannels==1?0:1)*rightGain*envelope;
+                    outputChannelData[1][outputOffset+s]+=repitch(sourceChannels==1?0:1)*automated.second*envelope;
                 continue;
             }
             // Riche: two 50%-overlapped Hann-windowed grains. Each grain
@@ -2586,9 +2658,9 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
                     + processed * track.spectralBlend;
             };
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
-                outputChannelData[0][outputOffset + s] += readMixed(0) * leftGain * envelopeAt(targetSeconds);
+                outputChannelData[0][outputOffset + s] += readMixed(0) * automated.first * envelopeAt(targetSeconds);
             if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
-                outputChannelData[1][outputOffset + s] += readMixed(sourceChannels == 1 ? 0 : 1) * rightGain * envelopeAt(targetSeconds);
+                outputChannelData[1][outputOffset + s] += readMixed(sourceChannels == 1 ? 0 : 1) * automated.second * envelopeAt(targetSeconds);
         }
         track.richeNextSample = mixEnd;
 

@@ -397,6 +397,20 @@ public:
     juce::String getAudioFileName(int trackIndex) const;
     // Clip metadata model: supports multiple independently positioned clips
     // without changing the existing single-buffer playback path.
+    // Time is normalized to the visible clip duration. No curve = legacy playback.
+    struct ClipAutomationPoint {
+        double time=0.;
+        float value=0.f;
+        int shape=0; // outgoing segment: linear, exponential, smooth S
+    };
+    struct ClipAutomationCurve {
+        bool relative=true;
+        std::vector<ClipAutomationPoint> points;
+    };
+    using ClipAutomationPtr=std::shared_ptr<const ClipAutomationCurve>;
+    static constexpr int maxClipAutomationPoints=128;
+    static bool validClipAutomation(const ClipAutomationCurve&,bool pan) noexcept;
+    static float evaluateClipAutomation(const ClipAutomationCurve&,double time) noexcept;
     struct AudioClipMetadata
     {
         juce::String id;
@@ -409,6 +423,7 @@ public:
         // Non-destructive clip controls for the dock audio editor.
         float clipGain = 1.0f;
         float clipPan = 0.0f; // independent stereo balance, -1 left / +1 right
+        ClipAutomationPtr gainAutomation,panAutomation;
         double pitchSemitones = 0.0;
         bool reverse = false;
         bool muted = false;
@@ -554,6 +569,7 @@ private:
         LibertyMixConsoleMeter::StereoCorrelationAccumulator meterCorrelation;
         std::atomic<float> clipGain { 1.0f };
         std::atomic<float> clipPan { 0.0f };
+        ClipAutomationPtr gainAutomation,panAutomation;
         std::atomic<double> clipPitch { 0.0 };
         std::atomic<bool> clipReverse { false };
         std::atomic<float> pan { 0.0f };

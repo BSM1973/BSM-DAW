@@ -17,6 +17,8 @@ bool AudioEngine::validAudioClip(const AudioClipMetadata& c)
        || c.trimStartFraction<0 || c.trimEndFraction>1 || c.trimStartFraction>=c.trimEndFraction
        || !std::isfinite(c.clipGain) || c.clipGain<0 || c.clipGain>4
        || !std::isfinite(c.clipPan) || std::abs(c.clipPan)>1.f
+       || (c.gainAutomation&&!validClipAutomation(*c.gainAutomation,false))
+       || (c.panAutomation&&!validClipAutomation(*c.panAutomation,true))
        || !std::isfinite(c.pitchSemitones) || std::abs(c.pitchSemitones)>48
        || !std::isfinite(c.fadeInSeconds) || c.fadeInSeconds<0
        || !std::isfinite(c.fadeOutSeconds) || c.fadeOutSeconds<0
@@ -45,6 +47,7 @@ std::shared_ptr<AudioEngine::AudioTrackState> AudioEngine::prepareAudioVoice(con
     v->buffer=std::const_pointer_cast<juce::AudioBuffer<float>>(c.sourceBuffer);
     v->bufferSampleRate.store(c.sourceSampleRate);v->startSeconds.store(c.startSeconds);v->lengthSeconds.store(c.lengthSeconds);
     v->clipId=c.id;v->fileName=c.sourceName;v->clipGain.store(c.clipGain);v->clipPan.store(c.clipPan);v->clipPitch.store(c.pitchSemitones);
+    v->gainAutomation=c.gainAutomation;v->panAutomation=c.panAutomation;
     v->clipReverse.store(c.reverse);v->clipMuted.store(c.muted);v->clipOffset.store(c.offsetSeconds);
     v->clipTrimStart.store(c.trimStartFraction);v->clipTrimEnd.store(c.trimEndFraction);
     v->clipFadeIn.store(c.fadeInSeconds);v->clipFadeOut.store(c.fadeOutSeconds);
@@ -84,7 +87,8 @@ std::vector<AudioEngine::AudioClipMetadata> AudioEngine::getArrangementAudioClip
         AudioClipMetadata c;c.id=t.clipId;c.sourceName=t.fileName;
         c.sourceBuffer=std::atomic_load(&t.buffer);c.sourceSampleRate=t.bufferSampleRate.load();
         c.startSeconds=t.startSeconds.load();c.lengthSeconds=t.lengthSeconds.load();
-        c.clipGain=t.clipGain.load();c.clipPan=t.clipPan.load();c.pitchSemitones=t.clipPitch.load();c.reverse=t.clipReverse.load();
+        c.clipGain=t.clipGain.load();c.clipPan=t.clipPan.load();c.pitchSemitones=t.clipPitch.load();
+        c.gainAutomation=std::atomic_load(&t.gainAutomation);c.panAutomation=std::atomic_load(&t.panAutomation);c.reverse=t.clipReverse.load();
         c.muted=t.clipMuted.load();c.offsetSeconds=t.clipOffset.load();c.envelopeLengthSeconds=t.clipEnvelopeLength.load();
         c.trimStartFraction=t.clipTrimStart.load();c.trimEndFraction=t.clipTrimEnd.load();
         c.fadeInSeconds=t.clipFadeIn.load();c.fadeOutSeconds=t.clipFadeOut.load();
@@ -186,6 +190,7 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
         t.startSeconds.store(primary->startSeconds.load());t.lengthSeconds.store(primary->lengthSeconds.load());
         t.fileName.swapWith(primary->fileName);t.clipId.swapWith(primary->clipId);
         t.clipGain.store(primary->clipGain.load());t.clipPan.store(primary->clipPan.load());t.clipPitch.store(primary->clipPitch.load());
+        std::atomic_store(&t.gainAutomation,primary->gainAutomation);std::atomic_store(&t.panAutomation,primary->panAutomation);
         t.clipReverse.store(primary->clipReverse.load());t.clipMuted.store(primary->clipMuted.load());
         t.clipOffset.store(primary->clipOffset.load());t.clipEnvelopeLength.store(primary->clipEnvelopeLength.load());
         t.clipTrimStart.store(primary->clipTrimStart.load());t.clipTrimEnd.store(primary->clipTrimEnd.load());
@@ -271,7 +276,7 @@ bool AudioEngine::prepareStretchedArrangementClip(const AudioClipMetadata& clip,
     const double rate=clip.sourceSampleRate;
     if(!std::isfinite(seconds*rate)||seconds*rate>32000000||seconds*rate<0.5)return false;
     // Render neutral region, leaving independent clip controls editable.
-    auto neutral=clip;neutral.clipGain=1.f;neutral.clipPan=0.f;neutral.pitchSemitones=0.0;neutral.reverse=false;
+    auto neutral=clip;neutral.clipGain=1.f;neutral.clipPan=0.f;neutral.gainAutomation.reset();neutral.panAutomation.reset();neutral.pitchSemitones=0.0;neutral.reverse=false;
     neutral.fadeInSeconds=neutral.fadeOutSeconds=0;neutral.spectralCache.reset();
     auto source=renderArrangementAudioClip(neutral);
     if(!source)return false;
@@ -306,7 +311,7 @@ AudioEngine::ClipRhythmAnalysis AudioEngine::analyseArrangementClipRhythm(const 
     ClipRhythmAnalysis result;
     // Intended for rhythmic loops; limit work on the UI thread.
     if(!validAudioClip(clip)||!clip.sourceBuffer||clip.lengthSeconds<1.5||clip.lengthSeconds>60.0)return result;
-    auto neutral=clip;neutral.clipGain=1.f;neutral.clipPan=0.f;neutral.pitchSemitones=0;neutral.reverse=false;
+    auto neutral=clip;neutral.clipGain=1.f;neutral.clipPan=0.f;neutral.gainAutomation.reset();neutral.panAutomation.reset();neutral.pitchSemitones=0;neutral.reverse=false;
     neutral.fadeInSeconds=neutral.fadeOutSeconds=0;neutral.spectralCache.reset();
     auto source=renderArrangementAudioClip(neutral);
     if(!source)return result;
