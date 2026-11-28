@@ -21,13 +21,13 @@ struct GroupMacro {
     int colour=0;
     double value=.5;
     double stateA=-1.,stateB=-1.; // -1 means not captured
-    int midiChannel=0,midiCC=-1,response=0;
+    int midiChannel=0,midiCC=-1,response=0,midiRelativeFormat=0;
     bool midiRelative=false;
     bool gain=false,pan=false,invertGain=false,invertPan=false;
     double gainMin=-60.,gainMax=12.,panMin=-100.,panMax=100.;
     bool valid()const{
         return name.length()<=32&&colour>=0&&colour<=31&&std::isfinite(value)&&value>=0.&&value<=1.&&
-            validSnapshot(stateA)&&validSnapshot(stateB)&&response>=0&&response<=4&&
+            validSnapshot(stateA)&&validSnapshot(stateB)&&response>=0&&response<=4&&midiRelativeFormat>=0&&midiRelativeFormat<=1&&
             ((midiChannel==0&&midiCC==-1)||(midiChannel>=1&&midiChannel<=16&&midiCC>=0&&midiCC<=127))&&
             std::isfinite(gainMin)&&std::isfinite(gainMax)&&gainMin>=-60.&&gainMax<=12.&&gainMin<=gainMax&&
             std::isfinite(panMin)&&std::isfinite(panMax)&&panMin>=-100.&&panMax<=100.&&panMin<=panMax;
@@ -47,9 +47,15 @@ struct GroupMacro {
     }
     double gainDb()const{return gainMin+(gainMax-gainMin)*responseValue(invertGain);}
     double panPercent()const{return panMin+(panMax-panMin)*responseValue(invertPan);}
-    bool isDefault()const{return name.isEmpty()&&colour==0&&value==.5&&stateA==-1.&&stateB==-1.&&midiChannel==0&&midiCC==-1&&!midiRelative&&response==0&&!gain&&!pan&&!invertGain&&!invertPan&&gainMin==-60.&&gainMax==12.&&panMin==-100.&&panMax==100.;}
+    bool isDefault()const{return name.isEmpty()&&colour==0&&value==.5&&stateA==-1.&&stateB==-1.&&midiChannel==0&&midiCC==-1&&!midiRelative&&midiRelativeFormat==0&&response==0&&!gain&&!pan&&!invertGain&&!invertPan&&gainMin==-60.&&gainMax==12.&&panMin==-100.&&panMax==100.;}
 };
 using GroupMacros=std::array<GroupMacro,8>;
+static double groupMacroMidiValue(const GroupMacro& m,std::uint64_t word,std::uint64_t old){
+    if(!m.midiRelative)return (double)(word&127)/127.;
+    const auto delta=static_cast<std::uint32_t>(word>>7)-static_cast<std::uint32_t>(old>>7);
+    const auto signedDelta=delta<=0x7fffffffU?(std::int64_t)delta:(std::int64_t)delta-4294967296LL;
+    return juce::jlimit(0.,1.,m.value+(double)signedDelta/127.);
+}
 struct PermanentClipGroup {
     juce::String name;
     int colour=0;
@@ -61,13 +67,34 @@ struct PermanentClipGroup {
 };
 std::map<juce::String,PermanentClipGroup> permanentGroups;
 std::map<juce::String,juce::String> memberGroups;
+struct GroupMacroMidiRoute {juce::String group;size_t slot=0;int format=0;bool relative=false,conflict=false;std::uint64_t last=0;};
+std::map<int,GroupMacroMidiRoute> groupMacroMidiRoutes;
 bool groupingSuspended=false;
 std::set<juce::String> auditionGroups;
 bool isolationMode=false;
 static juce::String audioGroupKey(const juce::String& id){return "audio:"+id;}
 static juce::String midiGroupKey(int id){return "midi:"+juce::String(id);}
+void rebuildGroupMacroMidiRoutes(){
+    std::map<int,GroupMacroMidiRoute> next;
+    for(const auto& group:permanentGroups)for(size_t i=0;i<group.second.macros.size();++i){
+        const auto& m=group.second.macros[i];if(!m.valid()||m.midiCC<0)continue;
+        const int key=(m.midiChannel-1)*128+m.midiCC;
+        const int format=m.midiRelative?m.midiRelativeFormat:0;
+        const auto old=groupMacroMidiRoutes.find(key);
+        const auto word=old!=groupMacroMidiRoutes.end()&&old->second.group==group.first&&old->second.slot==i&&old->second.format==format&&old->second.relative==m.midiRelative&&!old->second.conflict
+            ?old->second.last:owner.audioEngine.getGroupMacroCCWord(m.midiChannel,m.midiCC,format);
+        auto inserted=next.emplace(key,GroupMacroMidiRoute{group.first,i,format,m.midiRelative,false,word});
+        if(!inserted.second)inserted.first->second.conflict=true;
+    }
+    groupMacroMidiRoutes.swap(next);
+}
+bool groupMacroCCAvailable(const juce::String& id,int channel,int cc)const{
+    for(const auto& group:permanentGroups)if(group.first!=id)for(const auto& m:group.second.macros)
+        if(m.midiCC==cc&&m.midiChannel==channel)return false;
+    return true;
+}
 void rebuildGroupIndex(){
-    memberGroups.clear();
+    rebuildGroupMacroMidiRoutes();memberGroups.clear();
     for(const auto& g:permanentGroups)for(const auto& k:g.second.members)memberGroups[k]=g.first;
 }
 juce::String groupFor(const juce::String& key)const{
@@ -190,7 +217,7 @@ std::set<juce::String> liveGroupKeys()const{
     return keys;
 }
 void prunePermanentGroups(){
-    if(permanentGroups.empty())return;
+    if(permanentGroups.empty()){groupMacroMidiRoutes.clear();return;}
     const auto live=liveGroupKeys();
     for(auto it=permanentGroups.begin();it!=permanentGroups.end();){
         auto& members=it->second.members;
@@ -218,13 +245,13 @@ void savePermanentGroups(juce::XmlElement& root)const{
                 node->setAttribute("gainMin",m.gainMin);node->setAttribute("gainMax",m.gainMax);
                 node->setAttribute("panMin",m.panMin);node->setAttribute("panMax",m.panMax);
                 if(m.midiCC>=0){node->setAttribute("midiChannel",m.midiChannel);node->setAttribute("midiCC",m.midiCC);}
-                node->setAttribute("midiRelative",m.midiRelative);node->setAttribute("response",m.response);
+                node->setAttribute("midiRelative",m.midiRelative);node->setAttribute("midiRelativeFormat",m.midiRelativeFormat);node->setAttribute("response",m.response);
             }
         }
     }
 }
 void loadPermanentGroups(const juce::XmlElement& root){
-    permanentGroups.clear();memberGroups.clear();groupingSuspended=false;
+    permanentGroups.clear();memberGroups.clear();groupMacroMidiRoutes.clear();groupingSuspended=false;
     const auto* xml=root.getChildByName("PermanentClipGroups");
     if(!xml||xml->getIntAttribute("version")!=1)return;
     std::set<juce::String> used;int visited=0,total=0;
@@ -254,7 +281,7 @@ void loadPermanentGroups(const juce::XmlElement& root){
                 m.gainMin=node->getDoubleAttribute("gainMin",-60.);m.gainMax=node->getDoubleAttribute("gainMax",12.);
                 m.panMin=node->getDoubleAttribute("panMin",-100.);m.panMax=node->getDoubleAttribute("panMax",100.);
                 m.midiChannel=node->getIntAttribute("midiChannel",0);m.midiCC=node->getIntAttribute("midiCC",-1);
-                m.midiRelative=node->getBoolAttribute("midiRelative");m.response=node->getIntAttribute("response",0);
+                m.midiRelative=node->getBoolAttribute("midiRelative");m.midiRelativeFormat=node->getIntAttribute("midiRelativeFormat",0);m.response=node->getIntAttribute("response",0);
                 if(m.valid()){
                     if(m.midiCC>=0&&!midiKeys.insert({m.midiChannel,m.midiCC}).second){m.midiChannel=0;m.midiCC=-1;}
                     group.macros[(size_t)slot]=m;
@@ -532,7 +559,7 @@ ArrangementState captureArrangement() {
     }
     return state;
 }
-void beginArrangementEdit(){if(!pendingEdit){owner.audioEngine.setGroupMacroPreview({});clearGroupAudition();pendingEdit=std::make_unique<ArrangementState>(captureArrangement());}}
+void beginArrangementEdit(bool preserveAudition=false){if(!pendingEdit){owner.audioEngine.setGroupMacroPreview({});if(!preserveAudition)clearGroupAudition();pendingEdit=std::make_unique<ArrangementState>(captureArrangement());}}
 void finishArrangementEdit(){
     if(!pendingEdit)return;
     prunePermanentGroups();auto after=captureArrangement();
@@ -2072,7 +2099,7 @@ bool applyGroupClipOperation(int command,double value=0.0){
     auto registerCopy=[&](const juce::String& oldKey,const juce::String& newKey,int repeat){
         const auto id=groupFor(oldKey);if(groupingSuspended||id.isEmpty())return;
         auto& group=copiedGroups[{id,repeat}];const auto& original=permanentGroups.at(id);
-        group.name=(original.name+juce::String::fromUTF8(" — copie")).substring(0,80);group.colour=original.colour;group.parent=original.parent;group.macros=original.macros;group.members.insert(newKey);
+        group.name=(original.name+juce::String::fromUTF8(" — copie")).substring(0,80);group.colour=original.colour;group.parent=original.parent;group.macros=original.macros;for(auto& macro:group.macros){macro.midiChannel=0;macro.midiCC=-1;}group.members.insert(newKey);
     };
     if(copying){
         const double span=last-first;
@@ -2133,7 +2160,7 @@ bool applyGroupClipOperation(int command,double value=0.0){
         for(const auto& key:containers){
             auto group=permanentGroups.at(key.first);
             group.name=(group.name+juce::String::fromUTF8(" — copie")).substring(0,80);
-            group.members.clear();group.locked=false;copiedGroups.emplace(key,std::move(group));
+            group.members.clear();group.locked=false;for(auto& macro:group.macros){macro.midiChannel=0;macro.midiCC=-1;}copiedGroups.emplace(key,std::move(group));
         }
     }
     if(permanentGroups.size()+copiedGroups.size()>4096)return false;
@@ -2945,7 +2972,7 @@ bool applyGroupMacros(const juce::String& id,const GroupMacros& proposed,bool pr
     int gainAssignments=0,panAssignments=0;std::set<std::pair<int,int>> midiKeys;
     for(size_t i=0;i<proposed.size();++i){
         const auto& m=proposed[i];if(!m.valid())return false;
-        if(m.midiCC>=0&&!midiKeys.insert({m.midiChannel,m.midiCC}).second)return false;
+        if(m.midiCC>=0&&(!midiKeys.insert({m.midiChannel,m.midiCC}).second||!groupMacroCCAvailable(id,m.midiChannel,m.midiCC)))return false;
         if(m.gain&&++gainAssignments>1)return false;
         if(m.pan&&++panAssignments>1)return false;
         if(m.gainChanged(old[i])){if(gainChanged)return false;gainChanged=true;gainDb=m.gainDb();}
@@ -2975,7 +3002,7 @@ bool applyGroupMacros(const juce::String& id,const GroupMacros& proposed,bool pr
         if(targets==0)return false;
     }
     if(previewOnly){owner.audioEngine.setGroupMacroPreview(preview->empty()?std::shared_ptr<const AudioEngine::GroupMacroPreview>{}:preview);return true;}
-    beginArrangementEdit();std::vector<int> published;
+    beginArrangementEdit(true);std::vector<int> published;
     for(const auto& lane:after){
         if(!owner.audioEngine.replaceArrangementAudioClips(lane.first,lane.second)){
             for(int t:published){owner.audioEngine.replaceArrangementAudioClips(t,before.at(t));refreshAudio(t);}
@@ -2998,16 +3025,18 @@ class GroupMacroPanel final:public juce::Component,private juce::Timer{
     std::function<bool(const GroupMacros&)> callback,previewCallback;
     std::function<void()> clearPreview;
     std::function<std::uint64_t()> readLearn;
-    std::function<std::uint64_t(int,int)> readCC;
+    std::function<std::uint64_t(int,int,int)> readCC;
+    std::function<bool(int,int)> ccAvailable;
     std::array<std::uint64_t,8> lastCC{};
     std::uint64_t lastLearn=0;
     int learning=-1;
     bool loading=false;
     void resetCC(size_t i){
-        const auto& m=draft[i];lastCC[i]=readCC&&m.midiCC>=0?readCC(m.midiChannel,m.midiCC):0;
+        const auto& m=draft[i];lastCC[i]=readCC&&m.midiCC>=0?readCC(m.midiChannel,m.midiCC,m.midiRelative?m.midiRelativeFormat:0):0;
     }
     bool assignCC(size_t i,int channel,int cc){
         if(i>=draft.size()||channel<1||channel>16||cc<0||cc>127)return false;
+        if(ccAvailable&&!ccAvailable(channel,cc))return false;
         for(size_t j=0;j<draft.size();++j)if(j!=i&&draft[j].midiChannel==channel&&draft[j].midiCC==cc)return false;
         draft[i].midiChannel=channel;draft[i].midiCC=cc;resetCC(i);refreshKnobs();return true;
     }
@@ -3023,14 +3052,10 @@ class GroupMacroPanel final:public juce::Component,private juce::Timer{
         lastLearn=event;bool changed=false;
         for(size_t i=0;i<draft.size();++i){
             auto& m=draft[i];if(m.midiCC<0)continue;
-            const auto word=readCC(m.midiChannel,m.midiCC),old=lastCC[i];lastCC[i]=word;
+            const auto word=readCC(m.midiChannel,m.midiCC,m.midiRelative?m.midiRelativeFormat:0),old=lastCC[i];lastCC[i]=word;
             if(word==old||word==0||(!m.gain&&!m.pan))continue;
-            double value=(double)(word&127)/127.;
-            if(m.midiRelative){
-                const auto delta=static_cast<std::uint32_t>(word>>7)-static_cast<std::uint32_t>(old>>7);
-                const auto signedDelta=delta<=0x7fffffffU?(std::int64_t)delta:(std::int64_t)delta-4294967296LL;
-                value=juce::jlimit(0.,1.,m.value+(double)signedDelta/127.);
-            }
+            if(ccAvailable&&!ccAvailable(m.midiChannel,m.midiCC))continue;
+            const double value=groupMacroMidiValue(m,word,old);
             if(std::abs(value-m.value)>1.e-9){m.value=value;knobs[i].setValue(value*100.,juce::dontSendNotification);changed=true;}
         }
         if(changed)audition();
@@ -3039,7 +3064,8 @@ class GroupMacroPanel final:public juce::Component,private juce::Timer{
         juce::PopupMenu menu;const auto& m=draft[i];
         menu.addItem(1,"MIDI Learn",readLearn!=nullptr);
         menu.addItem(2,juce::String::fromUTF8("Supprimer l’assignation MIDI"),m.midiCC>=0);
-        menu.addItem(3,"MIDI absolu",true,!m.midiRelative);menu.addItem(4,"MIDI relatif (complément à deux)",true,m.midiRelative);
+        menu.addItem(3,"MIDI absolu",true,!m.midiRelative);menu.addItem(4,juce::String::fromUTF8("MIDI relatif (complément à deux)"),true,m.midiRelative&&m.midiRelativeFormat==0);
+        menu.addItem(5,"MIDI relatif (signe et amplitude)",true,m.midiRelative&&m.midiRelativeFormat==1);
         menu.addSeparator();juce::PopupMenu curves;
         const juce::String names[]={"Linéaire","Quadratique","Courbe en S","Exponentielle","Logarithmique"};
         for(int k=0;k<5;++k)curves.addItem(10+k,names[k],true,m.response==k);
@@ -3051,7 +3077,7 @@ class GroupMacroPanel final:public juce::Component,private juce::Timer{
             if(result==1){safe->learning=(int)i;safe->lastLearn=safe->readLearn();
                 safe->previewStatus.setText(juce::String::fromUTF8("MIDI Learn : bougez un contrôleur CC"),juce::dontSendNotification);}
             else if(result==2){macro.midiChannel=0;macro.midiCC=-1;safe->learning=-1;safe->resetCC(i);}
-            else if(result==3||result==4){macro.midiRelative=result==4;safe->resetCC(i);}
+            else if(result>=3&&result<=5){macro.midiRelative=result!=3;macro.midiRelativeFormat=result==5?1:0;safe->resetCC(i);}
             else if(result>=10&&result<=14){macro.response=result-10;safe->audition();}
             safe->refreshKnobs();
         });
@@ -3105,7 +3131,7 @@ class GroupMacroPanel final:public juce::Component,private juce::Timer{
     }
     void close(){if(auto* d=findParentComponentOfClass<juce::DialogWindow>())d->exitModalState(0);}
 public:
-    GroupMacroPanel(const GroupMacros& initial,std::function<bool(const GroupMacros&)> cb,std::function<bool(const GroupMacros&)> preview={},std::function<void()> clear={},std::function<std::uint64_t()> learn={},std::function<std::uint64_t(int,int)> cc={}):draft(initial),callback(std::move(cb)),previewCallback(std::move(preview)),clearPreview(std::move(clear)),readLearn(std::move(learn)),readCC(std::move(cc)){
+    GroupMacroPanel(const GroupMacros& initial,std::function<bool(const GroupMacros&)> cb,std::function<bool(const GroupMacros&)> preview={},std::function<void()> clear={},std::function<std::uint64_t()> learn={},std::function<std::uint64_t(int,int,int)> cc={},std::function<bool(int,int)> available={}):draft(initial),callback(std::move(cb)),previewCallback(std::move(preview)),clearPreview(std::move(clear)),readLearn(std::move(learn)),readCC(std::move(cc)),ccAvailable(std::move(available)){
         for(size_t i=0;i<knobs.size();++i){
             auto& k=knobs[i];slot.addItem("Macro "+juce::String((int)i+1),(int)i+1);
             k.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);k.setRange(0.,100.,.1);
@@ -3180,6 +3206,32 @@ public:
     }
 };
 juce::Component::SafePointer<GroupMacroPanel> groupMacroPanel;
+// Read only the indexed physical controls. Consume events during edits and
+// modal preview so stale CC values are never replayed on dialog close.
+void pollPermanentGroupMacroMidi(std::function<std::uint64_t(int,int,int)> reader={}){
+    if(groupMacroMidiRoutes.empty())return;
+    const bool suspended=groupMacroPanel||pendingEdit!=nullptr;
+    std::map<juce::String,GroupMacros> changed;
+    for(auto& entry:groupMacroMidiRoutes){
+        auto& route=entry.second;
+        const int channel=entry.first/128+1,cc=entry.first%128;
+        const auto word=reader?reader(channel,cc,route.format):owner.audioEngine.getGroupMacroCCWord(channel,cc,route.format);
+        const auto old=route.last;route.last=word;
+        if(suspended||route.conflict||word==old||word==0)continue;
+        const auto found=permanentGroups.find(route.group);if(found==permanentGroups.end())continue;
+        const auto& m=found->second.macros[route.slot];
+        if(m.midiChannel!=channel||m.midiCC!=cc||(!m.gain&&!m.pan)||subtreeLocked(route.group))continue;
+        const double next=groupMacroMidiValue(m,word,old);
+        if(std::abs(next-m.value)<=1.e-9)continue;
+        auto inserted=changed.emplace(route.group,found->second.macros);
+        inserted.first->second[route.slot].value=next;
+    }
+    for(const auto& entry:changed){
+        if(!applyGroupMacros(entry.first,entry.second)){
+            operationMessage=juce::String::fromUTF8("Macro MIDI : conflit de cibles ou automation absolue");repaint();
+        }
+    }
+}
 void showGroupMacros(const juce::String& id){
     if(groupMacroPanel||!permanentGroups.count(id)||subtreeLocked(id)||pendingEdit)return;
     const auto signature=captureArrangement().signature;
@@ -3190,7 +3242,8 @@ void showGroupMacros(const juce::String& id){
         return safe&&!safe->stopped.load()&&safe->captureArrangement().signature==signature&&safe->applyGroupMacros(id,macros,true);
     },[safe]{if(safe)safe->owner.audioEngine.setGroupMacroPreview({});},
     [safe]()->std::uint64_t{return safe&&!safe->stopped.load()?safe->owner.audioEngine.getGroupMacroLearnEvent():0;},
-    [safe](int ch,int cc)->std::uint64_t{return safe&&!safe->stopped.load()?safe->owner.audioEngine.getGroupMacroCCWord(ch,cc):0;});
+    [safe](int ch,int cc,int format)->std::uint64_t{return safe&&!safe->stopped.load()?safe->owner.audioEngine.getGroupMacroCCWord(ch,cc,format):0;},
+    [safe,id](int ch,int cc){return safe&&!safe->stopped.load()&&safe->groupMacroCCAvailable(id,ch,cc);});
     groupMacroPanel=panel;
     juce::DialogWindow::LaunchOptions options;options.dialogTitle=juce::String::fromUTF8("LIBERTY — MACROS DE GROUPE");
     options.dialogBackgroundColour=juce::Colour(0xff101821);options.useNativeTitleBar=false;
@@ -4505,13 +4558,20 @@ bool runArrangementTests(){
             require(std::abs(response.responseValue(false)-.0625)<1.e-9,"macro quadratic response");
             std::uint64_t word=0;
             GroupMacroPanel midiPanel(macros,[](const GroupMacros&){return true;},{},{},[]()->std::uint64_t{return 0;},
-                [&word](int ch,int cc)->std::uint64_t{return ch==2&&cc==74?word:0;});
+                [&word](int ch,int cc,int)->std::uint64_t{return ch==2&&cc==74?word:0;});
             require(!midiPanel.assignCCForTest(1,2,74),"macro MIDI duplicate refusal");
             word=AudioEngine::advanceGroupMacroCCWord(word,1);
             word=AudioEngine::advanceGroupMacroCCWord(word,2);
             word=AudioEngine::advanceGroupMacroCCWord(word,127);
             midiPanel.pollMidiForTest();
             require(std::abs(midiPanel.macrosForTest()[0].value-(.25+2./127.))<1.e-9,"macro accumulated relative CC");
+            auto sign=AudioEngine::advanceGroupMacroCCWord(0,3,1);
+            sign=AudioEngine::advanceGroupMacroCCWord(sign,65,1);
+            require(std::abs(groupMacroMidiValue(m,sign,0)-(.25+2./127.))<1.e-9,"macro sign magnitude relative");
+            auto other=PermanentClipGroup{};other.container=true;other.name="MIDI conflict fixture";other.macros[0]=m;
+            const auto otherId=juce::Uuid().toString();permanentGroups.emplace(otherId,other);rebuildGroupIndex();
+            require(!groupMacroCCAvailable(groupId,2,74)&&!applyGroupMacros(groupId,macros),"macro project global conflict");
+            permanentGroups.erase(otherId);rebuildGroupIndex();
             auto midiConflict=macros;midiConflict[1].midiChannel=2;midiConflict[1].midiCC=74;
             require(!applyGroupMacros(groupId,midiConflict),"macro persisted MIDI conflict");
             const auto beforePreview=captureArrangement().signature;
@@ -4530,7 +4590,16 @@ bool runArrangementTests(){
             actual=owner.audioEngine.getArrangementAudioClips(0).front();
             require(actual.clipGain==baseline.clipGain&&actual.clipPan==baseline.clipPan&&permanentGroups.at(groupId).macros[0].isDefault(),"macro undo exact");
             require(undoArrangement(true)&&permanentGroups.at(groupId).macros[0].gain,"macro redo");
-            require(undoArrangement(false)&&selectPermanentIds({groupId}),"macro fixture restore");
+            require(groupMacroMidiRoutes.size()==1,"macro permanent route rebuilt");
+            const auto key=128+74;
+            const auto prior=groupMacroMidiRoutes.at(key).last;
+            const auto moved=AudioEngine::advanceGroupMacroCCWord(prior,8);
+            pollPermanentGroupMacroMidi([&](int ch,int cc,int)->std::uint64_t{return ch==2&&cc==74?moved:0;});
+            const auto actualValue=permanentGroups.at(groupId).macros[0].value;
+            require(std::abs(actualValue-(.25+8./127.))<1.e-9,"macro permanent MIDI without panel");
+            actual=owner.audioEngine.getArrangementAudioClips(0).front();
+            require(std::abs(actual.clipGain-std::pow(10.,(-12.+12.*actualValue)/20.))<1.e-6,"macro permanent audio target");
+            require(undoArrangement(false)&&undoArrangement(false)&&selectPermanentIds({groupId}),"macro fixture restore");
         }
         require(applyGroupClipOperation(35)&&midiClips.front().muted&&owner.audioEngine.getArrangementAudioClips(0).front().muted,"group mixed mute");
         require(undoArrangement(false),"undo group mixed mute");
