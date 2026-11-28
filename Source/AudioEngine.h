@@ -114,6 +114,16 @@ public:
     // MIDI Learn. The serial number distinguishes repeated identical messages.
     std::uint64_t getPerformMidiLearnEvent() const noexcept
     {return performMidiLearnEvent.load(std::memory_order_acquire);}
+    // Dedicated CC mailbox per channel/controller. The accumulated signed
+    // relative movement survives GUI polling intervals; no event queue allocation.
+    static std::uint64_t advanceGroupMacroCCWord(std::uint64_t old,int value) noexcept;
+    std::uint64_t getGroupMacroCCWord(int channel,int cc) const noexcept {
+        return channel>=1&&channel<=16&&cc>=0&&cc<=127
+            ?groupMacroCCWords[(size_t)((channel-1)*128+cc)].load(std::memory_order_acquire):0;
+    }
+    std::uint64_t getGroupMacroLearnEvent() const noexcept {
+        return groupMacroLearnEvent.load(std::memory_order_acquire);
+    }
     void setInstrumentMidiInput(int track, const juce::String& identifier);
     juce::String getInstrumentMidiInput(int track) const;
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
@@ -674,6 +684,8 @@ private:
     void handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& message) override;
     std::atomic<std::uint64_t> performMidiLearnEvent { 0 };
     std::atomic<std::uint32_t> performMidiLearnSerial { 0 };
+    std::array<std::atomic<std::uint64_t>,2048> groupMacroCCWords {};
+    std::atomic<std::uint64_t> groupMacroLearnEvent {0};
     juce::MidiMessageCollector liveMidiCollector;
     // Piano-roll keyboard audition is independent of external MIDI monitoring.
     juce::MidiMessageCollector pianoPreviewCollector;

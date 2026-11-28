@@ -22,6 +22,7 @@ void processLibertyRecordingInput(AudioEngine*, const float* const*, int, int);
 
 AudioEngine::AudioEngine()
 {
+    for(auto& word:groupMacroCCWords)word.store(0,std::memory_order_relaxed);
     (void)LibertyRepitch::filter(); // initialise coefficient table before any callback
     tracks.reserve(initialAudioTracks);
     for (int i = 0; i < initialAudioTracks; ++i)
@@ -149,6 +150,14 @@ std::vector<AudioEngine::CapturedMidiEvent> AudioEngine::endMidiCapture()
     return std::move(capturedMidiEvents);
 }
 
+std::uint64_t AudioEngine::advanceGroupMacroCCWord(std::uint64_t old,int value) noexcept
+{
+    value=juce::jlimit(0,127,value);
+    const int delta=value==0||value==64?0:value<64?value:value-128;
+    const auto total=static_cast<std::uint32_t>(old>>7)+static_cast<std::uint32_t>(delta);
+    const std::uint64_t serial=((old>>39)+1)&0x1ffffffULL;
+    return (serial<<39)|(static_cast<std::uint64_t>(total)<<7)|static_cast<std::uint64_t>(value);
+}
 void AudioEngine::handleIncomingMidiMessage(juce::MidiInput* source, const juce::MidiMessage& message)
 {
     // A single atomic word for real MIDI Learn (no allocation, GUI or
@@ -165,6 +174,12 @@ void AudioEngine::handleIncomingMidiMessage(juce::MidiInput* source, const juce:
             ((std::uint64_t)message.getChannel()<<16)|
             ((std::uint64_t)number<<8)|(std::uint64_t)value;
         performMidiLearnEvent.store(packed,std::memory_order_release);
+        if(kind==1){
+            auto& word=groupMacroCCWords[(size_t)((message.getChannel()-1)*128+number)];
+            auto old=word.load(std::memory_order_relaxed);
+            while(!word.compare_exchange_weak(old,advanceGroupMacroCCWord(old,value),std::memory_order_release,std::memory_order_relaxed)){}
+            groupMacroLearnEvent.store(packed,std::memory_order_release);
+        }
     }
     const juce::String sourceId = source != nullptr ? source->getIdentifier() : juce::String();
     const int monitored = monitoredInstrumentTrack.load(std::memory_order_acquire);
