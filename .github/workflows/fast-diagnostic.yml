@@ -721,3 +721,33 @@ jobs:
           name: Liberty-Native-FreeSpirit-Preview-windows-x64-ZIP
           path: build-win/BSM_DAW_artefacts/Release/
           if-no-files-found: error
+
+  group-final-soak-macos:
+    name: GROUP stability 60 min (headless macOS ARM64)
+    if: github.ref == 'refs/heads/feature/liberty-daw-three-editions'
+    needs: fast-macos-arm64
+    runs-on: macos-26
+    timeout-minutes: 80
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Liberty-Native-FreeSpirit-Preview-arm64-ZIP
+          path: soak-input
+      - name: Extract validated application
+        run: |
+          mkdir -p soak-app soak-report
+          ditto -x -k soak-input/Liberty-macOS-arm64-Diagnostic.zip soak-app
+      - name: Run paced 60-minute callback test and capture process resources
+        env:
+          LIBERTY_GROUP_SOAK: '1'
+        run: |
+          set -o pipefail
+          /usr/bin/time -l "soak-app/Liberty Native Preview.app/Contents/MacOS/Liberty" --arrangement-tools-test 2>&1 | tee soak-report/group-soak.log
+      - name: Upload stability report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-Group-Stability-60min-macOS
+          path: soak-report
+          if-no-files-found: warn
+          retention-days: 7

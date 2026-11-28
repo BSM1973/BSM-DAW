@@ -19,6 +19,7 @@ void processLibertyRecordingInput(AudioEngine*, const float* const*, int, int);
 #include <cmath>
 #include <limits>
 #include <chrono>
+#include <cstdio>
 
 AudioEngine::AudioEngine()
 {
@@ -2202,13 +2203,14 @@ void AudioEngine::renderOfflineTrack(void* ctx,int index) noexcept
 
 bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
                                           double renderSampleRate, int blockSamples,
-                                          bool allowSpectralCache,void (*beforeBlock)(AudioEngine&,int,void*),void* hookContext)
+                                          bool allowSpectralCache,void (*beforeBlock)(AudioEngine&,int,void*),void* hookContext,int pacedSeconds)
 {
     // Dedicated headless test instances only: do not call concurrently with
     // the hardware callback or while the audio device is running.
     if (initialised.load(std::memory_order_acquire) || renderSampleRate <= 0.0
         || blockSamples <= 0 || destination.getNumChannels() < 1)
         return false;
+    if(pacedSeconds<0||pacedSeconds>3600||(pacedSeconds>0&&(destination.getNumSamples()<blockSamples||renderSampleRate* pacedSeconds>2147483647.-blockSamples)))return false;
     if(!prepareOfflinePdc(renderSampleRate,destination.getNumChannels()))return false;
     // The spectral worker may publish a cache between two offline renders.
     // Suppress the cache only for explicit sample-parity tests; live playback
@@ -2255,7 +2257,9 @@ bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
     juce::AudioIODeviceCallbackContext context {};
     std::int64_t expectedPosition=0;
     bool dynamicOk=true;
-    for (int offset = 0; offset < destination.getNumSamples(); offset += blockSamples)
+    const int totalFrames=pacedSeconds>0?(int)std::llround(renderSampleRate*pacedSeconds):destination.getNumSamples();
+    const auto soakStart=std::chrono::steady_clock::now();double callbackSeconds=0.,maxCallbackSeconds=0.;std::uint64_t overruns=0;
+    for (int offset = 0; offset < totalFrames; offset += blockSamples)
     {
         if(beforeBlock)beforeBlock(*this,offset,hookContext);
         // Experimental control/coordinator polling: outside the real audio callback.
@@ -2270,25 +2274,37 @@ bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
                 dynamicOk=false;break;
             }
         }
-        const int count = juce::jmin(blockSamples, destination.getNumSamples() - offset);
+        const int count = juce::jmin(blockSamples, totalFrames - offset);
         float* channels[2] = { nullptr, nullptr };
         const int n = juce::jmin(2, destination.getNumChannels());
         for (int ch = 0; ch < n; ++ch)
-            channels[ch] = destination.getWritePointer(ch, offset);
+            channels[ch] = destination.getWritePointer(ch, pacedSeconds>0?0:offset);
         const bool configured=offlinePool!=nullptr;
         offlineParallelActive=configured&&(!offlineAdaptive||offlineCooldown.admit());
         const bool usedParallel=offlineParallelActive;
         if(offlineAdaptive&&requestedOfflineWorkers&&!usedParallel)++adaptiveSerialBlocks;
         const auto started=usedParallel&&offlineAdaptive?LibertyCpu::Clock::now():LibertyCpu::Clock::time_point{};
         const auto before=transportSamples.load(std::memory_order_relaxed);
+        const auto callbackStart=std::chrono::steady_clock::now();
         audioDeviceIOCallbackWithContext(nullptr, 0, channels, n, count, context);
         expectedPosition=before+count;
+        if(pacedSeconds>0){
+            const double elapsed=std::chrono::duration<double>(std::chrono::steady_clock::now()-callbackStart).count();
+            callbackSeconds+=elapsed;maxCallbackSeconds=std::max(maxCallbackSeconds,elapsed);if(elapsed>count/renderSampleRate)++overruns;
+            if(transportSamples.load(std::memory_order_relaxed)!=expectedPosition||(!playing.load()&&offset+count<totalFrames)){dynamicOk=false;break;}
+            for(int ch=0;ch<n;++ch)for(int i=0;i<count;++i)if(!std::isfinite(channels[ch][i]))dynamicOk=false;
+            if(!dynamicOk)break;
+            std::this_thread::sleep_until(soakStart+std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>((offset+count)/renderSampleRate)));
+            if(offset==0||((offset+count)/int(renderSampleRate*60)!=offset/int(renderSampleRate*60)))
+                std::fprintf(stderr,"group_soak_progress,%.3f,%.3f,%llu\n",(offset+count)/renderSampleRate,callbackSeconds,(unsigned long long)overruns);
+        }
         if(pdcPlanRejected){dynamicOk=false;break;}
         if(usedParallel&&offlineAdaptive){
             const auto elapsed=std::chrono::duration_cast<std::chrono::nanoseconds>(LibertyCpu::Clock::now()-started).count();
             offlineCooldown.observe(static_cast<std::uint64_t>(elapsed),LibertyCpu::budgetFor(renderSampleRate,count));
         }
     }
+    if(pacedSeconds>0)std::fprintf(stderr,"group_soak_result,%d,%.3f,%.6f,%.6f,%llu,%d\n",pacedSeconds,std::chrono::duration<double>(std::chrono::steady_clock::now()-soakStart).count(),callbackSeconds,maxCallbackSeconds,(unsigned long long)overruns,(int)dynamicOk);
     playing.store(false, std::memory_order_relaxed);
     offlineParallelActive=false;offlinePdcActive=false;
     hardwarePdcPrepared=hardwarePdcBlock=false;
@@ -2328,10 +2344,29 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     deviceRunning.store(true,std::memory_order_release);
 }
 
+void AudioEngine::InstrumentAuditionTransition::process(juce::AudioBuffer<float>& buffer,int frames,double rate,std::int64_t position,std::uint64_t revision) noexcept
+{
+    if(frames<=0||rate<=0.||buffer.getNumChannels()==0)return;
+    const int channels=std::min(2,buffer.getNumChannels());
+    if(nextSample!=position){remaining=total=0;generation=revision;}
+    else if(generation!=revision){
+        generation=revision;total=remaining=std::max(1,(int)std::ceil(rate*.005));
+        for(int ch=0;ch<channels;++ch){const float first=buffer.getSample(ch,0);correction[(size_t)ch]=std::isfinite(first)&&std::isfinite(last[(size_t)ch])?last[(size_t)ch]-first:0.f;}
+    }
+    if(remaining>0){
+        const int count=std::min(frames,remaining);
+        for(int ch=0;ch<channels;++ch){auto* data=buffer.getWritePointer(ch);const float offset=correction[(size_t)ch];
+            for(int i=0;i<count;++i)data[i]+=offset*(float)(remaining-i)/(float)total;}
+        remaining-=count;
+    }
+    for(int ch=0;ch<channels;++ch)last[(size_t)ch]=buffer.getSample(ch,frames-1);
+    nextSample=position+frames;
+}
 void AudioEngine::setGroupAudition(std::shared_ptr<const GroupAuditionMask> mask) noexcept
 {
     std::atomic_store(&groupAudition,std::move(mask));
     if(playing.load(std::memory_order_relaxed)){
+        groupAuditionGeneration.fetch_add(1,std::memory_order_release);
         instrumentPanicPending.store(true,std::memory_order_release);
         instrumentResumePending.store(true,std::memory_order_release);
     }
@@ -3163,6 +3198,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     const bool anyPlaybackSolo = isAnyTrackSolo();
     const auto rate = sampleRate.load();
     auto& pluginHost = LibertyPluginHost::instance();
+    const auto auditionRevision=groupAuditionGeneration.load(std::memory_order_acquire);
     const auto audition=getGroupAudition();
     const bool panicInstruments = instrumentPanicPending.exchange(false, std::memory_order_acq_rel);
     const bool resumeInstruments = instrumentResumePending.exchange(false, std::memory_order_acq_rel);
@@ -3398,6 +3434,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 }
                 // Instrument strips must show audio after instruments and FX.
                 instrumentBus.applyGain(getLibertyPerformInstrumentMacro(this));
+                state.auditionTransition.process(instrumentBus,numSamples,rate,position,auditionRevision);
                 meterBus(state.meterPeak,state.meterPeakRight,
                          state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,instrumentBus);
                 compensateOfflineLane((int)tracks.size()+instrumentTrack,instrumentBus,numSamples);

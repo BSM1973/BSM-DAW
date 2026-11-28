@@ -63,7 +63,7 @@ public:
     bool renderOfflineForTesting(juce::AudioBuffer<float>& destination,
                                  double renderSampleRate, int blockSamples,
                                  bool allowSpectralCache = true,
-                                 void (*beforeBlock)(AudioEngine&,int,void*)=nullptr,void* context=nullptr);
+                                 void (*beforeBlock)(AudioEngine&,int,void*)=nullptr,void* context=nullptr,int pacedSeconds=0);
     // Dedicated stopped offline engines only; never enabled by hardware.
     bool configureOfflineMulticoreForTesting(unsigned workers,bool adaptive=false);
     std::uint64_t getParallelBlocksForTesting() const noexcept {return parallelBlocks;}
@@ -269,6 +269,15 @@ public:
     struct GroupAuditionMask {
         std::set<juce::String> audioIds;
         std::set<int> instrumentIds;
+    };
+    // Short continuity correction on the rendered instrument bus after MIDI
+    // panic/resume; no allocation or plugin-specific voice assumptions.
+    struct InstrumentAuditionTransition {
+        std::array<float,2> last{},correction{};
+        int remaining=0,total=0;
+        std::int64_t nextSample=-1;
+        std::uint64_t generation=0;
+        void process(juce::AudioBuffer<float>&,int,double,std::int64_t,std::uint64_t) noexcept;
     };
     void setGroupAudition(std::shared_ptr<const GroupAuditionMask>) noexcept;
     std::shared_ptr<const GroupAuditionMask> getGroupAudition() const noexcept {
@@ -634,6 +643,7 @@ private:
 
     static std::shared_ptr<AudioTrackState> prepareAudioVoice(const AudioClipMetadata&);
     std::shared_ptr<const GroupAuditionMask> groupAudition;
+    std::atomic<std::uint64_t> groupAuditionGeneration{0};
     std::shared_ptr<const GroupMacroPreview> groupMacroPreview;
     void mixAudioVoice(AudioTrackState&,float,float,double,std::int64_t,float* const*,int,int,bool applyAudition=true);
 
@@ -669,6 +679,7 @@ private:
     };
     struct InstrumentPlaybackState
     {
+        InstrumentAuditionTransition auditionTransition;
         std::shared_ptr<InstrumentNoteSnapshot> noteSnapshot;
         std::shared_ptr<std::vector<InstrumentControllerPlayback>> controllerSnapshot;
         std::shared_ptr<InstrumentNoteSnapshot> arrangementSnapshot;

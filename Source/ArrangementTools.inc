@@ -9547,6 +9547,36 @@ bool runArrangementTests(){
                 require(std::abs(macro.getSample(0,1900)-baseline.getSample(0,1900)*.125f)<.002f,"macro smoothed gain pan left");
                 require(std::abs(macro.getSample(1,1900)-baseline.getSample(1,1900)*.25f)<.002f,"macro smoothed gain pan right");
                 require(std::abs(macro.getSample(0,4095)-baseline.getSample(0,4095))<.001f,"macro preview cancellation settles");
+                AudioEngine::InstrumentAuditionTransition instrumentTransition;
+                juce::AudioBuffer<float> bus(2,128);
+                auto fill=[&](float value){for(int ch=0;ch<2;++ch)for(int i=0;i<128;++i)bus.setSample(ch,i,value);};
+                fill(.25f);instrumentTransition.process(bus,128,48000.,0,0);
+                fill(0.f);instrumentTransition.process(bus,128,48000.,128,1);
+                require(std::abs(bus.getSample(0,0)-.25f)<1.e-6f&&bus.getSample(0,127)<.125f,"instrument audition continuity");
+                fill(0.f);instrumentTransition.process(bus,128,48000.,256,1);
+                require(std::abs(bus.getSample(0,127))<1.e-6f,"instrument audition decay");
+                fill(.25f);instrumentTransition.process(bus,128,48000.,384,2);
+                require(std::abs(bus.getSample(0,0))<1.e-6f,"instrument resume continuity");
+                fill(.25f);instrumentTransition.process(bus,128,48000.,512,2);
+                require(std::abs(bus.getSample(0,127)-.25f)<1.e-6f,"instrument resume settled");
+                if(juce::SystemStats::getEnvironmentVariable("LIBERTY_GROUP_SOAK","0")=="1"){
+                    AudioEngine soakEngine;
+                    auto sharedSource=std::make_shared<juce::AudioBuffer<float>>(1,60*48000);
+                    for(int i=0;i<sharedSource->getNumSamples();++i)sharedSource->setSample(0,i,.02f);
+                    std::vector<AudioClip> soakClips;
+                    auto mask=std::make_shared<AudioEngine::GroupAuditionMask>();
+                    for(int i=0;i<61;++i){auto clip=constant;clip.id="soak-"+juce::String(i);clip.startSeconds=i*60.;clip.lengthSeconds=60.;clip.sourceBuffer=sharedSource;soakClips.push_back(clip);if(i%2==0)mask->audioIds.insert(clip.id);}
+                    require(soakEngine.replaceArrangementAudioClips(0,soakClips),"soak arrangement fixture");
+                    juce::AudioBuffer<float> scratch(2,256);
+                    std::shared_ptr<const AudioEngine::GroupAuditionMask> selection=mask;
+                    auto switchMask=[](AudioEngine& engine,int offset,void* ctx){
+                        if(offset%(48000*16)==0){
+                            const auto& selected=*static_cast<std::shared_ptr<const AudioEngine::GroupAuditionMask>*>(ctx);
+                            engine.setGroupAudition((offset/(48000*16))%2?selected:std::shared_ptr<const AudioEngine::GroupAuditionMask>{});
+                        }
+                    };
+                    require(soakEngine.renderOfflineForTesting(scratch,48000,256,true,switchMask,&selection,3600),"60 minute paced callback soak");
+                }
             }
             require(!changeGroupParent(container,child),"performance container cycle rejection");
             require(editPermanentGroup(56,{},0,container)&&lockedMember(audioGroupKey(regions[2].id)),"performance container inherited lock");
