@@ -816,10 +816,18 @@ class ClipAutomationPanel final:public juce::Component{
     std::array<Curve,2> curves;
     std::array<bool,2> active{{false,false}},dirty{{false,false}};
     juce::ComboBox parameter,mode,shape;
-    juce::ToggleButton snap{"Grille 1/16 (durée du clip)"};
+    juce::ToggleButton snap{juce::String::fromUTF8("Grille musicale")};
+    juce::TextButton copy{"Copier"},cut{"Couper"},paste{"Coller"},duplicate{"Dupliquer"};
+    double gridStep=0.,gridOrigin=0.;
     juce::TextButton remove{"Supprimer le point"},clear{"Effacer la courbe"},apply{"Appliquer"},cancel{"Annuler"};
     std::function<bool(const std::array<Ptr,2>&,const std::array<bool,2>&)> onApply;
     int selected=-1;
+    std::set<int> selection;
+    std::vector<Point> dragOriginal,clipboard;
+    int clipboardChannel=-1;
+    bool marquee=false;
+    juce::Point<float> anchor;
+    juce::Rectangle<float> selectionRect;
     int channel()const{return parameter.getSelectedId()==2?1:0;}
     juce::Rectangle<float> plot()const{return {46.f,76.f,568.f,218.f};}
     float low()const{return channel()==1?-1.f:0.f;}
@@ -827,19 +835,60 @@ class ClipAutomationPanel final:public juce::Component{
     juce::Point<float> position(const Point& p)const{
         const auto r=plot();return {r.getX()+r.getWidth()*(float)p.time,r.getBottom()-r.getHeight()*(p.value-low())/(high()-low())};
     }
+    double quantize(double t)const{
+        return snap.getToggleState()&&gridStep>0.?gridOrigin+std::round((t-gridOrigin)/gridStep)*gridStep:t;
+    }
+    bool hasInteriorSelection()const{
+        const auto& pts=curves[(size_t)channel()].points;
+        return std::any_of(selection.begin(),selection.end(),[&](int i){return i>0&&i+1<(int)pts.size();});
+    }
+    void deleteSelection(){
+        auto& pts=curves[(size_t)channel()].points;
+        for(auto it=selection.rbegin();it!=selection.rend();++it)
+            if(*it>0&&*it+1<(int)pts.size())pts.erase(pts.begin()+*it);
+        selected=-1;selection.clear();mark();
+    }
+    bool copySelection(){
+        if(!hasInteriorSelection())return false;
+        clipboard.clear();clipboardChannel=channel();
+        const auto& pts=curves[(size_t)channel()].points;
+        for(int i:selection)if(i>0&&i+1<(int)pts.size())clipboard.push_back(pts[(size_t)i]);
+        refresh();return !clipboard.empty();
+    }
+    void pasteSelection(){
+        if(clipboard.empty()||clipboardChannel!=channel())return;
+        auto& pts=curves[(size_t)channel()].points;
+        if(pts.size()+clipboard.size()>AudioEngine::maxClipAutomationPoints)return;
+        const double step=gridStep>0.?gridStep:1./16.;
+        const double target=selected>=0&&selected<(int)pts.size()?pts[(size_t)selected].time+step:clipboard.back().time+step;
+        const double delta=quantize(target)-clipboard.front().time;
+        auto next=pts;
+        std::vector<double> inserted;
+        for(auto point:clipboard){
+            point.time+=delta;
+            if(point.time<=0.||point.time>=1.)return;
+            const auto it=std::lower_bound(next.begin(),next.end(),point.time,[](const Point& a,double t){return a.time<t;});
+            if((it!=next.end()&&std::abs(it->time-point.time)<1.e-6)||(it!=next.begin()&&std::abs((it-1)->time-point.time)<1.e-6))return;
+            inserted.push_back(point.time);next.insert(it,point);
+        }
+        pts=std::move(next);selection.clear();
+        for(size_t i=0;i<pts.size();++i)if(std::find(inserted.begin(),inserted.end(),pts[i].time)!=inserted.end())selection.insert((int)i);
+        selected=selection.empty()?-1:*selection.rbegin();mark();
+    }
     void refresh(){
         const int ch=channel();auto& c=curves[(size_t)ch];
         mode.setSelectedId(c.relative?1:2,juce::dontSendNotification);
         const bool exists=selected>=0&&selected<(int)c.points.size();
         shape.setSelectedId(exists?c.points[(size_t)selected].shape+1:1,juce::dontSendNotification);
         shape.setEnabled(exists&&selected+1<(int)c.points.size());
-        remove.setEnabled(exists&&selected>0&&selected+1<(int)c.points.size());
+        remove.setEnabled(hasInteriorSelection());copy.setEnabled(hasInteriorSelection());cut.setEnabled(hasInteriorSelection());
+        duplicate.setEnabled(hasInteriorSelection());paste.setEnabled(!clipboard.empty()&&clipboardChannel==ch);
         clear.setEnabled(active[(size_t)ch]);repaint();
     }
     void mark(){const auto ch=(size_t)channel();active[ch]=dirty[ch]=true;refresh();}
     void close(){if(auto* d=findParentComponentOfClass<juce::DialogWindow>())d->exitModalState(0);}
 public:
-    ClipAutomationPanel(Ptr gain,Ptr pan,std::function<bool(const std::array<Ptr,2>&,const std::array<bool,2>&)> cb):onApply(std::move(cb)){
+    ClipAutomationPanel(Ptr gain,Ptr pan,std::function<bool(const std::array<Ptr,2>&,const std::array<bool,2>&)> cb,double step=0.,double origin=0.):gridStep(step),gridOrigin(origin),onApply(std::move(cb)){
         const Ptr initial[]={gain,pan};
         for(size_t i=0;i<2;++i){
             if(initial[i]){curves[i]=*initial[i];active[i]=true;}
@@ -847,13 +896,17 @@ public:
         }
         parameter.addItem("Gain (linéaire)",1);parameter.addItem("Panoramique",2);parameter.setSelectedId(1);
         mode.addItem("Relatif",1);mode.addItem("Absolu",2);
-        shape.addItem(juce::String::fromUTF8("Linéaire"),1);shape.addItem("Exponentielle",2);shape.addItem("Courbe en S",3);
-        for(auto* c:std::initializer_list<juce::Component*>{&parameter,&mode,&shape,&snap,&remove,&clear,&apply,&cancel})addAndMakeVisible(c);
-        parameter.onChange=[this]{selected=-1;refresh();};
+        shape.addItem(juce::String::fromUTF8("Linéaire"),1);shape.addItem("Quadratique",2);shape.addItem("Courbe en S",3);shape.addItem("Exponentielle",4);shape.addItem("Logarithmique",5);
+        for(auto* c:std::initializer_list<juce::Component*>{&parameter,&mode,&shape,&snap,&remove,&clear,&apply,&cancel,&copy,&cut,&paste,&duplicate})addAndMakeVisible(c);
+        snap.setEnabled(gridStep>0.);snap.setToggleState(gridStep>0.,juce::dontSendNotification);
+        if(gridStep<=0.)snap.setButtonText("Grille indisponible");
+        parameter.onChange=[this]{selected=-1;selection.clear();refresh();};
         mode.onChange=[this]{curves[(size_t)channel()].relative=mode.getSelectedId()==1;mark();};
-        shape.onChange=[this]{auto& points=curves[(size_t)channel()].points;if(selected>=0&&selected+1<(int)points.size()){points[(size_t)selected].shape=shape.getSelectedId()-1;mark();}};
-        remove.onClick=[this]{auto& points=curves[(size_t)channel()].points;if(selected>0&&selected+1<(int)points.size()){points.erase(points.begin()+selected);selected=-1;mark();}};
-        clear.onClick=[this]{const auto ch=(size_t)channel();const float neutral=ch==0?1.f:0.f;curves[ch].points={{0.,neutral,0},{1.,neutral,0}};active[ch]=false;dirty[ch]=true;selected=-1;refresh();};
+        shape.onChange=[this]{auto& points=curves[(size_t)channel()].points;for(int i:selection)if(i>=0&&i+1<(int)points.size())points[(size_t)i].shape=shape.getSelectedId()-1;mark();};
+        remove.onClick=[this]{if(hasInteriorSelection())deleteSelection();};
+        copy.onClick=[this]{copySelection();};cut.onClick=[this]{if(copySelection())deleteSelection();};
+        paste.onClick=[this]{pasteSelection();};duplicate.onClick=[this]{if(copySelection())pasteSelection();};
+        clear.onClick=[this]{const auto ch=(size_t)channel();const float neutral=ch==0?1.f:0.f;curves[ch].points={{0.,neutral,0},{1.,neutral,0}};active[ch]=false;dirty[ch]=true;selected=-1;selection.clear();refresh();};
         cancel.onClick=[this]{close();};
         apply.onClick=[this]{
             std::array<Ptr,2> result;
@@ -865,18 +918,23 @@ public:
             if(onApply&&onApply(result,dirty))close();
             else juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Automation",juce::String::fromUTF8("Le projet a changé ou les clips sont verrouillés."));
         };
-        setSize(660,408);refresh();
+        setSize(660,448);refresh();
     }
     void resized()override{
         parameter.setBounds(20,12,200,30);mode.setBounds(230,12,145,30);shape.setBounds(385,12,255,30);
         snap.setBounds(20,312,265,28);remove.setBounds(295,312,165,28);clear.setBounds(470,312,170,28);
-        cancel.setBounds(380,358,120,32);apply.setBounds(510,358,130,32);
+        copy.setBounds(20,350,145,28);cut.setBounds(175,350,145,28);paste.setBounds(330,350,145,28);duplicate.setBounds(485,350,155,28);
+        cancel.setBounds(380,396,120,32);apply.setBounds(510,396,130,32);
     }
     void paint(juce::Graphics& g)override{
         g.fillAll(juce::Colour(0xff101821));const auto r=plot();
         g.setColour(juce::Colour(0xff1b2e40));g.fillRect(r);
         g.setColour(juce::Colour(0xff3b5367));
-        for(int i=0;i<=16;++i){const float x=r.getX()+r.getWidth()*i/16.f;g.drawVerticalLine((int)x,r.getY(),r.getBottom());}
+        if(gridStep>0.){
+            const double first=gridOrigin+std::ceil(-gridOrigin/gridStep)*gridStep;
+            const double stride=gridStep*std::max(1.,std::ceil(1./(gridStep*160.)));
+            for(double t=first;t<=1.;t+=stride){const float x=r.getX()+r.getWidth()*(float)t;g.drawVerticalLine((int)x,r.getY(),r.getBottom());}
+        }else for(int i=0;i<=16;++i){const float x=r.getX()+r.getWidth()*i/16.f;g.drawVerticalLine((int)x,r.getY(),r.getBottom());}
         for(int i=0;i<=4;++i){const float y=r.getY()+r.getHeight()*i/4.f;g.drawHorizontalLine((int)y,r.getX(),r.getRight());}
         const auto& c=curves[(size_t)channel()];
         juce::Path line;
@@ -886,11 +944,13 @@ public:
         }
         g.setColour(juce::Colour(active[(size_t)channel()]?0xff67cce4:0xff718396));g.strokePath(line,juce::PathStrokeType(2.f));
         for(size_t i=0;i<c.points.size();++i){
-            const auto p=position(c.points[i]);g.setColour(juce::Colour((int)i==selected?0xffffd48f:0xff9addeb));
+            const auto p=position(c.points[i]);g.setColour(juce::Colour(selection.count((int)i)?0xffffd48f:0xff9addeb));
             g.fillEllipse(p.x-4.f,p.y-4.f,8.f,8.f);
         }
         g.setColour(juce::Colour(0xffd9eafa));g.setFont(12.f);
-        g.drawText(juce::String::fromUTF8("Cliquez pour créer un point, glissez pour le déplacer."),20,48,620,20,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("Clic : créer | Maj : sélection multiple / rectangle | Glisser : déplacer"),20,48,620,20,juce::Justification::centredLeft);
+        if(marquee){g.setColour(juce::Colour(0x3367cce4));g.fillRect(selectionRect);g.setColour(juce::Colour(0xff67cce4));g.drawRect(selectionRect,1.f);}
+        g.setColour(juce::Colour(0xffd9eafa));
         g.drawText(juce::String(high(),1),2,66,40,20,juce::Justification::centredRight);
         g.drawText(juce::String(low(),1),2,284,40,20,juce::Justification::centredRight);
         g.drawText("0 %",46,294,80,18,juce::Justification::centredLeft);
@@ -898,30 +958,53 @@ public:
     }
     void mouseDown(const juce::MouseEvent& e)override{
         if(!plot().expanded(5.f).contains(e.position))return;
-        auto& pts=curves[(size_t)channel()].points;selected=-1;
-        for(size_t i=0;i<pts.size();++i)if(position(pts[i]).getDistanceFrom(e.position)<=9.f){selected=(int)i;refresh();return;}
-        if(pts.size()>=AudioEngine::maxClipAutomationPoints)return;
-        const auto r=plot();double t=juce::jlimit(0.,1.,(double)(e.position.x-r.getX())/r.getWidth());
-        if(snap.getToggleState())t=std::round(t*16.)/16.;
-        if(t<=0.||t>=1.)return;
+        auto& pts=curves[(size_t)channel()].points;anchor=e.position;dragOriginal.clear();marquee=false;
+        for(size_t i=0;i<pts.size();++i)if(position(pts[i]).getDistanceFrom(e.position)<=9.f){
+            if(e.mods.isShiftDown()){
+                if(!selection.erase((int)i))selection.insert((int)i);
+            }else if(!selection.count((int)i)){selection.clear();selection.insert((int)i);}
+            selected=selection.count((int)i)?(int)i:(selection.empty()?-1:*selection.begin());
+            dragOriginal=pts;refresh();return;
+        }
+        if(e.mods.isShiftDown()){
+            marquee=true;selectionRect={anchor.x,anchor.y,0.f,0.f};selection.clear();selected=-1;refresh();return;
+        }
+        selection.clear();selected=-1;
+        if(pts.size()>=AudioEngine::maxClipAutomationPoints){refresh();return;}
+        const auto r=plot();const double t=quantize(juce::jlimit(0.,1.,(double)(e.position.x-r.getX())/r.getWidth()));
+        if(t<=0.||t>=1.){refresh();return;}
         const auto it=std::lower_bound(pts.begin(),pts.end(),t,[](const Point& a,double b){return a.time<b;});
-        if(it==pts.end()||std::abs(it->time-t)<1.e-5)return;
+        if(it==pts.end()||std::abs(it->time-t)<1.e-6||(it!=pts.begin()&&std::abs((it-1)->time-t)<1.e-6)){refresh();return;}
         const float v=juce::jlimit(low(),high(),low()+(r.getBottom()-e.position.y)/r.getHeight()*(high()-low()));
-        selected=(int)std::distance(pts.begin(),it);pts.insert(it,{t,v,0});mark();
+        selected=(int)std::distance(pts.begin(),it);pts.insert(it,{t,v,0});selection.insert(selected);dragOriginal=pts;mark();
     }
     void mouseDrag(const juce::MouseEvent& e)override{
         auto& pts=curves[(size_t)channel()].points;
-        if(selected<0||selected>=(int)pts.size())return;
-        const auto r=plot();auto& p=pts[(size_t)selected];
-        double t=(double)(e.position.x-r.getX())/r.getWidth();
-        if(snap.getToggleState())t=std::round(t*16.)/16.;
-        if(selected>0&&selected+1<(int)pts.size()){
-            const double lo=pts[(size_t)selected-1].time+1.e-6,hi=pts[(size_t)selected+1].time-1.e-6;
-            if(lo<=hi)p.time=juce::jlimit(lo,hi,t);
+        if(marquee){
+            selectionRect=juce::Rectangle<float>(anchor,e.position).getIntersection(plot());
+            selection.clear();for(size_t i=0;i<pts.size();++i)if(selectionRect.contains(position(pts[i])))selection.insert((int)i);
+            selected=selection.empty()?-1:*selection.begin();refresh();return;
         }
-        p.value=juce::jlimit(low(),high(),low()+(r.getBottom()-e.position.y)/r.getHeight()*(high()-low()));mark();
+        if(selected<0||selection.empty()||dragOriginal.size()!=pts.size())return;
+        const auto r=plot();
+        double dt=(double)(e.position.x-anchor.x)/r.getWidth();
+        const double original=dragOriginal[(size_t)selected].time;dt=quantize(original+dt)-original;
+        double lo=-1.,hi=1.;float vlo=low()-high(),vhi=high()-low();
+        for(int i:selection){
+            const auto& p=dragOriginal[(size_t)i];
+            vlo=std::max(vlo,low()-p.value);vhi=std::min(vhi,high()-p.value);
+            if(i==0||i+1==(int)pts.size()){lo=hi=0.;continue;}
+            if(!selection.count(i-1))lo=std::max(lo,std::min(0.,dragOriginal[(size_t)i-1].time+1.e-6-p.time));
+            if(!selection.count(i+1))hi=std::min(hi,std::max(0.,dragOriginal[(size_t)i+1].time-1.e-6-p.time));
+        }
+        dt=juce::jlimit(lo,hi,dt);
+        const float dv=juce::jlimit(vlo,vhi,-(e.position.y-anchor.y)/r.getHeight()*(high()-low()));
+        for(int i:selection){auto& p=pts[(size_t)i];const auto& old=dragOriginal[(size_t)i];p.time=old.time+dt;p.value=juce::jlimit(low(),high(),old.value+dv);}
+        mark();
     }
+    void mouseUp(const juce::MouseEvent&)override{marquee=false;dragOriginal.clear();refresh();}
 };
+
 bool applyClipAutomation(const std::set<AudioKey>& keys,const std::array<AudioEngine::ClipAutomationPtr,2>& curves,
                          const std::array<bool,2>& dirty){
     if(pendingEdit||keys.empty())return false;
@@ -951,16 +1034,31 @@ bool showClipAutomation(const std::set<AudioKey>& keys){
     if(keys.empty()||pendingEdit)return false;
     for(const auto& key:keys)if(lockedMember(audioGroupKey(key.second)))return false;
     AudioEngine::ClipAutomationPtr gain,pan;
-    // A multi-clip editor starts with neutral curves, replacing only the edited lane.
-    if(keys.size()==1){
-        const auto& key=*keys.begin();
-        for(const auto& clip:owner.audioEngine.getArrangementAudioClips(key.first))if(clip.id==key.second){gain=clip.gainAutomation;pan=clip.panAutomation;}
+    // A multi-clip editor starts neutral. A project grid is only meaningful
+    // for clips with the same duration and grid-relative start position.
+    double grid=0.,origin=0.;bool first=true,compatible=true;
+    const double seconds=getLibertySnapSeconds(owner.tempoBpm);
+    for(const auto& key:keys){
+        bool found=false;
+        for(const auto& clip:owner.audioEngine.getArrangementAudioClips(key.first))if(clip.id==key.second){
+            found=true;
+            if(keys.size()==1){gain=clip.gainAutomation;pan=clip.panAutomation;}
+            if(seconds>0.&&std::isfinite(seconds)&&clip.lengthSeconds>0.){
+                const double step=seconds/clip.lengthSeconds;
+                const double offset=-std::fmod(clip.startSeconds,seconds)/clip.lengthSeconds;
+                if(first){grid=step;origin=offset;}
+                else if(std::abs(step-grid)>1.e-8||std::abs(std::remainder(offset-origin,grid))>1.e-8)compatible=false;
+            }else compatible=false;
+            first=false;break;
+        }
+        if(!found)return false;
     }
+    if(!compatible||!std::isfinite(grid)||grid<1.e-8)grid=origin=0.;
     const auto signature=captureArrangement().signature;
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     auto* panel=new ClipAutomationPanel(gain,pan,[safe,keys,signature](const auto& curves,const auto& dirty){
         return safe&&!safe->stopped.load()&&safe->captureArrangement().signature==signature&&safe->applyClipAutomation(keys,curves,dirty);
-    });
+    },grid,origin);
     juce::DialogWindow::LaunchOptions options;options.dialogTitle=juce::String::fromUTF8("LIBERTY — AUTOMATION DE CLIPS");
     options.dialogBackgroundColour=juce::Colour(0xff101821);options.useNativeTitleBar=false;
     options.escapeKeyTriggersCloseButton=true;options.resizable=false;options.componentToCentreAround=&owner;
@@ -3439,6 +3537,11 @@ bool runArrangementTests(){
             require(std::abs(AudioEngine::evaluateClipAutomation(*envelope,.5)-.25f)<1.e-6,"automation exponential midpoint");
             envelope->points.front().shape=2;
             require(std::abs(AudioEngine::evaluateClipAutomation(*envelope,.25)-.15625f)<1.e-6,"automation S quarter");
+            envelope->points.front().shape=3;
+            require(AudioEngine::validClipAutomation(*envelope,false)&&std::abs(AudioEngine::evaluateClipAutomation(*envelope,.5)-(float)(std::expm1(2.)/std::expm1(4.)))<1.e-6,"automation true exponential");
+            envelope->points.front().shape=4;
+            require(AudioEngine::validClipAutomation(*envelope,false)&&AudioEngine::evaluateClipAutomation(*envelope,.5)>.5f,"automation logarithmic midpoint");
+            require(AudioEngine::evaluateClipAutomation(*envelope,0.)==0.f&&AudioEngine::evaluateClipAutomation(*envelope,1.)==1.f,"automation exact endpoints");
             envelope->points.front().shape=0;
             auto automated=neutral;automated.gainAutomation=envelope;
             const auto rendered=panEngine.renderArrangementAudioClip(automated);

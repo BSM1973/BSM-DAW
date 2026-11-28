@@ -401,7 +401,7 @@ public:
     struct ClipAutomationPoint {
         double time=0.;
         float value=0.f;
-        int shape=0; // outgoing segment: linear, exponential, smooth S
+        int shape=0; // outgoing: linear, quadratic (legacy), S, exponential, logarithmic
     };
     struct ClipAutomationCurve {
         bool relative=true;

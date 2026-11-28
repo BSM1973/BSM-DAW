@@ -1661,7 +1661,7 @@ bool AudioEngine::validClipAutomation(const ClipAutomationCurve& curve,bool pan)
     for(const auto& p:curve.points){
         if(!std::isfinite(p.time)||p.time<0.||p.time>1.||p.time<=previous||
            !std::isfinite(p.value)||p.value<(pan?-1.f:0.f)||p.value>(pan?1.f:4.f)||
-           p.shape<0||p.shape>2)return false;
+           p.shape<0||p.shape>4)return false;
         previous=p.time;
     }
     return true;
@@ -1679,6 +1679,8 @@ float AudioEngine::evaluateClipAutomation(const ClipAutomationCurve& curve,doubl
     double x=(time-a.time)/(b.time-a.time);
     if(a.shape==1)x=x*x;
     else if(a.shape==2)x=x*x*(3.-2.*x);
+    else if(a.shape==3)x=std::expm1(4.*x)/std::expm1(4.);
+    else if(a.shape==4)x=std::log1p(std::expm1(4.)*x)/4.;
     return a.value+(b.value-a.value)*(float)x;
 }
 void AudioEngine::writeAudioClipProperties(juce::XmlElement& element,const AudioClipMetadata& clip)
