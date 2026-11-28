@@ -16,6 +16,28 @@ static juce::StringArray permanentColourNames(){
     for(int i=0;i<32;++i)names.add(juce::String(base[i%8])+juce::String::fromUTF8(i<8?"":i<16?" foncé":i<24?" clair":" désaturé"));
     return names;
 }
+struct GroupMacro {
+    juce::String name;
+    int colour=0;
+    double value=.5;
+    bool gain=false,pan=false,invertGain=false,invertPan=false;
+    double gainMin=-60.,gainMax=12.,panMin=-100.,panMax=100.;
+    bool valid()const{
+        return name.length()<=32&&colour>=0&&colour<=31&&std::isfinite(value)&&value>=0.&&value<=1.&&
+            std::isfinite(gainMin)&&std::isfinite(gainMax)&&gainMin>=-60.&&gainMax<=12.&&gainMin<=gainMax&&
+            std::isfinite(panMin)&&std::isfinite(panMax)&&panMin>=-100.&&panMax<=100.&&panMin<=panMax;
+    }
+    bool gainChanged(const GroupMacro& old)const{
+        return gain&&(!old.gain||value!=old.value||gainMin!=old.gainMin||gainMax!=old.gainMax||invertGain!=old.invertGain);
+    }
+    bool panChanged(const GroupMacro& old)const{
+        return pan&&(!old.pan||value!=old.value||panMin!=old.panMin||panMax!=old.panMax||invertPan!=old.invertPan);
+    }
+    double gainDb()const{return gainMin+(gainMax-gainMin)*(invertGain?1.-value:value);}
+    double panPercent()const{return panMin+(panMax-panMin)*(invertPan?1.-value:value);}
+    bool isDefault()const{return name.isEmpty()&&colour==0&&value==.5&&!gain&&!pan&&!invertGain&&!invertPan&&gainMin==-60.&&gainMax==12.&&panMin==-100.&&panMax==100.;}
+};
+using GroupMacros=std::array<GroupMacro,8>;
 struct PermanentClipGroup {
     juce::String name;
     int colour=0;
@@ -23,6 +45,7 @@ struct PermanentClipGroup {
     bool container=false;
     juce::String parent;
     std::set<juce::String> members;
+    GroupMacros macros;
 };
 std::map<juce::String,PermanentClipGroup> permanentGroups;
 std::map<juce::String,juce::String> memberGroups;
@@ -172,6 +195,18 @@ void savePermanentGroups(juce::XmlElement& root)const{
         if(entry.second.parent.isNotEmpty())g->setAttribute("parent",entry.second.parent);
         if(entry.second.container)g->setAttribute("container",true);
         for(const auto& member:entry.second.members)g->createNewChildElement("Member")->setAttribute("key",member);
+        if(std::any_of(entry.second.macros.begin(),entry.second.macros.end(),[](const auto& m){return !m.isDefault();})){
+            auto* macros=g->createNewChildElement("Macros");
+            for(size_t i=0;i<entry.second.macros.size();++i){
+                const auto& m=entry.second.macros[i];if(m.isDefault())continue;
+                auto* node=macros->createNewChildElement("Macro");
+                node->setAttribute("slot",(int)i);node->setAttribute("name",m.name);node->setAttribute("colour",m.colour);
+                node->setAttribute("value",m.value);node->setAttribute("gain",m.gain);node->setAttribute("pan",m.pan);
+                node->setAttribute("invertGain",m.invertGain);node->setAttribute("invertPan",m.invertPan);
+                node->setAttribute("gainMin",m.gainMin);node->setAttribute("gainMax",m.gainMax);
+                node->setAttribute("panMin",m.panMin);node->setAttribute("panMax",m.panMax);
+            }
+        }
     }
 }
 void loadPermanentGroups(const juce::XmlElement& root){
@@ -191,6 +226,20 @@ void loadPermanentGroups(const juce::XmlElement& root){
             const auto k=m->getStringAttribute("key");
             if(m->hasTagName("Member")&&k.length()<=256&&(k.startsWith("audio:")||k.startsWith("midi:"))&&!used.count(k))
                 group.members.insert(k);
+        }
+        if(const auto* macros=g->getChildByName("Macros")){
+            std::set<int> slots;int count=0;
+            for(auto* node=macros->getFirstChildElement();node&&count++<8;node=node->getNextElement()){
+                const int slot=node->getIntAttribute("slot",-1);
+                if(!node->hasTagName("Macro")||slot<0||slot>=8||!slots.insert(slot).second)continue;
+                GroupMacro m;m.name=node->getStringAttribute("name").substring(0,32);
+                m.colour=node->getIntAttribute("colour",0);m.value=node->getDoubleAttribute("value",.5);
+                m.gain=node->getBoolAttribute("gain");m.pan=node->getBoolAttribute("pan");
+                m.invertGain=node->getBoolAttribute("invertGain");m.invertPan=node->getBoolAttribute("invertPan");
+                m.gainMin=node->getDoubleAttribute("gainMin",-60.);m.gainMax=node->getDoubleAttribute("gainMax",12.);
+                m.panMin=node->getDoubleAttribute("panMin",-100.);m.panMax=node->getDoubleAttribute("panMax",100.);
+                if(m.valid())group.macros[(size_t)slot]=m;
+            }
         }
         if(group.container)group.members.clear();
         if(group.container||group.members.size()>=2){used.insert(group.members.begin(),group.members.end());permanentGroups.emplace(id,std::move(group));}
@@ -2003,7 +2052,7 @@ bool applyGroupClipOperation(int command,double value=0.0){
     auto registerCopy=[&](const juce::String& oldKey,const juce::String& newKey,int repeat){
         const auto id=groupFor(oldKey);if(groupingSuspended||id.isEmpty())return;
         auto& group=copiedGroups[{id,repeat}];const auto& original=permanentGroups.at(id);
-        group.name=(original.name+juce::String::fromUTF8(" — copie")).substring(0,80);group.colour=original.colour;group.parent=original.parent;group.members.insert(newKey);
+        group.name=(original.name+juce::String::fromUTF8(" — copie")).substring(0,80);group.colour=original.colour;group.parent=original.parent;group.macros=original.macros;group.members.insert(newKey);
     };
     if(copying){
         const double span=last-first;
@@ -2867,6 +2916,153 @@ void analyseSelectionAsync(const std::set<AudioKey>& selection){
         });
     });
 }
+// Macro updates stage all affected clips before touching the engine. Each
+// edited macro maps an absolute static clip parameter; no cumulative drift.
+bool applyGroupMacros(const juce::String& id,const GroupMacros& proposed){
+    if(pendingEdit||!permanentGroups.count(id)||subtreeLocked(id))return false;
+    const auto old=permanentGroups.at(id).macros;
+    bool gainChanged=false,panChanged=false;double gainDb=0.,panPercent=0.;
+    for(size_t i=0;i<proposed.size();++i){
+        const auto& m=proposed[i];if(!m.valid())return false;
+        if(m.gainChanged(old[i])){if(gainChanged)return false;gainChanged=true;gainDb=m.gainDb();}
+        if(m.panChanged(old[i])){if(panChanged)return false;panChanged=true;panPercent=m.panPercent();}
+    }
+    const auto keys=hierarchicalMembers({id});
+    std::map<int,std::vector<AudioClip>> before,after;
+    size_t targets=0;
+    if(gainChanged||panChanged){
+        for(int lane=0;lane<owner.getAudioTrackCount();++lane){
+            auto clips=owner.audioEngine.getArrangementAudioClips(lane);
+            auto edited=clips;bool touched=false;
+            for(auto& clip:edited)if(keys.count(audioGroupKey(clip.id))){
+                if(lockedMember(audioGroupKey(clip.id)))return false;
+                // Absolute curves replace static parameters at playback.
+                if((gainChanged&&clip.gainAutomation&&!clip.gainAutomation->relative)||
+                   (panChanged&&clip.panAutomation&&!clip.panAutomation->relative))return false;
+                if(gainChanged)clip.clipGain=(float)std::pow(10.,gainDb/20.);
+                if(panChanged)clip.clipPan=(float)(panPercent/100.);
+                if(!AudioEngine::validAudioClip(clip))return false;
+                ++targets;touched=true;
+            }
+            if(touched){before.emplace(lane,std::move(clips));after.emplace(lane,std::move(edited));}
+        }
+        if(targets==0)return false;
+    }
+    beginArrangementEdit();std::vector<int> published;
+    for(const auto& lane:after){
+        if(!owner.audioEngine.replaceArrangementAudioClips(lane.first,lane.second)){
+            for(int t:published){owner.audioEngine.replaceArrangementAudioClips(t,before.at(t));refreshAudio(t);}
+            finishArrangementEdit();return false;
+        }
+        published.push_back(lane.first);refreshAudio(lane.first);
+    }
+    permanentGroups.at(id).macros=proposed;finishArrangementEdit();owner.repaint();repaint();return true;
+}
+class GroupMacroPanel final:public juce::Component{
+    GroupMacros draft;
+    std::array<juce::Slider,8> knobs;
+    juce::ComboBox slot,colour;
+    juce::TextEditor name;
+    juce::ToggleButton gain{"Gain"},pan{"Panoramique"},invertGain{"Inverser"},invertPan{"Inverser"};
+    juce::Slider gainMin,gainMax,panMin,panMax;
+    juce::TextButton apply{"Appliquer"},cancel{"Annuler"};
+    std::function<bool(const GroupMacros&)> callback;
+    bool loading=false;
+    int current()const{return juce::jlimit(0,7,slot.getSelectedId()-1);}
+    void readControls(){
+        if(loading)return;
+        auto& m=draft[(size_t)current()];
+        m.name=name.getText().trim().substring(0,32);m.colour=std::max(0,colour.getSelectedId()-1);
+        m.gain=gain.getToggleState();m.pan=pan.getToggleState();
+        m.invertGain=invertGain.getToggleState();m.invertPan=invertPan.getToggleState();
+        m.gainMin=gainMin.getValue();m.gainMax=gainMax.getValue();
+        m.panMin=panMin.getValue();m.panMax=panMax.getValue();
+        refreshKnobs();
+    }
+    void refreshKnobs(){
+        for(size_t i=0;i<knobs.size();++i){
+            auto& m=draft[i];
+            knobs[i].setColour(juce::Slider::rotarySliderFillColourId,permanentGroupColour(m.colour));
+            knobs[i].setEnabled(m.gain||m.pan);
+        }
+        repaint();
+    }
+    void loadControls(){
+        loading=true;const auto& m=draft[(size_t)current()];
+        name.setText(m.name,false);colour.setSelectedId(m.colour+1,juce::dontSendNotification);
+        gain.setToggleState(m.gain,juce::dontSendNotification);pan.setToggleState(m.pan,juce::dontSendNotification);
+        invertGain.setToggleState(m.invertGain,juce::dontSendNotification);invertPan.setToggleState(m.invertPan,juce::dontSendNotification);
+        gainMin.setValue(m.gainMin,juce::dontSendNotification);gainMax.setValue(m.gainMax,juce::dontSendNotification);
+        panMin.setValue(m.panMin,juce::dontSendNotification);panMax.setValue(m.panMax,juce::dontSendNotification);
+        loading=false;refreshKnobs();
+    }
+    void close(){if(auto* d=findParentComponentOfClass<juce::DialogWindow>())d->exitModalState(0);}
+public:
+    GroupMacroPanel(const GroupMacros& initial,std::function<bool(const GroupMacros&)> cb):draft(initial),callback(std::move(cb)){
+        for(size_t i=0;i<knobs.size();++i){
+            auto& k=knobs[i];slot.addItem("Macro "+juce::String((int)i+1),(int)i+1);
+            k.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);k.setRange(0.,100.,.1);
+            k.setTextBoxStyle(juce::Slider::TextBoxBelow,false,70,22);
+            k.setTextValueSuffix(" %");k.setValue(draft[i].value*100.,juce::dontSendNotification);
+            k.setColour(juce::Slider::rotarySliderOutlineColourId,juce::Colour(0xff34485b));
+            k.onValueChange=[this,i]{draft[i].value=knobs[i].getValue()/100.;};addAndMakeVisible(k);
+        }
+        for(int i=0;i<32;++i)colour.addItem("Couleur "+juce::String(i+1),i+1);
+        name.setInputRestrictions(32);name.setTextToShowWhenEmpty("Nom de la macro",juce::Colour(0xff8ca5b7));
+        for(auto* c:std::initializer_list<juce::Component*>{&slot,&colour,&name,&gain,&pan,&invertGain,&invertPan,&gainMin,&gainMax,&panMin,&panMax,&apply,&cancel})addAndMakeVisible(c);
+        auto range=[this](juce::Slider& k,double lo,double hi,const juce::String& unit){
+            k.setSliderStyle(juce::Slider::LinearHorizontal);k.setRange(lo,hi,.1);k.setTextBoxStyle(juce::Slider::TextBoxRight,false,70,24);
+            k.setTextValueSuffix(unit);k.onValueChange=[this]{readControls();};
+        };
+        range(gainMin,-60.,12.," dB");range(gainMax,-60.,12.," dB");
+        range(panMin,-100.,100.," %");range(panMax,-100.,100.," %");
+        slot.setSelectedId(1,juce::dontSendNotification);slot.onChange=[this]{loadControls();};
+        name.onTextChange=[this]{readControls();};colour.onChange=[this]{readControls();};
+        for(auto* toggle:{&gain,&pan,&invertGain,&invertPan})toggle->onClick=[this]{readControls();};
+        apply.onClick=[this]{readControls();if(callback&&callback(draft))close();
+            else juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Macros",
+                juce::String::fromUTF8("Valeurs invalides, conflit de cibles, automation absolue ou projet modifié."));};
+        cancel.onClick=[this]{close();};setSize(800,390);loadControls();
+    }
+    void resized()override{
+        for(size_t i=0;i<knobs.size();++i)knobs[i].setBounds(16+(int)i*96,42,92,112);
+        slot.setBounds(16,176,160,28);name.setBounds(186,176,340,28);colour.setBounds(536,176,248,28);
+        gain.setBounds(16,220,112,28);gainMin.setBounds(160,220,236,28);gainMax.setBounds(432,220,236,28);invertGain.setBounds(682,220,102,28);
+        pan.setBounds(16,262,112,28);panMin.setBounds(160,262,236,28);panMax.setBounds(432,262,236,28);invertPan.setBounds(682,262,102,28);
+        cancel.setBounds(536,342,118,32);apply.setBounds(666,342,118,32);
+    }
+    void paint(juce::Graphics& g)override{
+        g.fillAll(juce::Colour(0xff101821));g.setColour(juce::Colour(0xffd9eafa));g.setFont(14.f);
+        for(size_t i=0;i<draft.size();++i){
+            g.setColour(permanentGroupColour(draft[i].colour));
+            g.drawFittedText(draft[i].name.isEmpty()?"Macro "+juce::String((int)i+1):draft[i].name,16+(int)i*96,12,92,26,juce::Justification::centred,1);
+        }
+        g.setColour(juce::Colour(0xffd9eafa));g.setFont(12.f);
+        g.drawText("Min.",130,220,30,28,juce::Justification::centredLeft);g.drawText("Max.",400,220,32,28,juce::Justification::centredLeft);
+        g.drawText("Min.",130,262,30,28,juce::Justification::centredLeft);g.drawText("Max.",400,262,32,28,juce::Justification::centredLeft);
+        g.drawFittedText(juce::String::fromUTF8("Réglez les assignations et les potentiomètres, puis appliquez. Une transaction Undo."),16,304,768,26,juce::Justification::centredLeft,1);
+    }
+    bool layoutValid()const{
+        std::vector<juce::Rectangle<int>> bounds;
+        for(int i=0;i<getNumChildComponents();++i){
+            const auto r=getChildComponent(i)->getBounds();if(r.isEmpty()||!getLocalBounds().contains(r))return false;
+            for(const auto& b:bounds)if(b.intersects(r))return false;bounds.push_back(r);
+        }
+        return true;
+    }
+};
+void showGroupMacros(const juce::String& id){
+    if(!permanentGroups.count(id)||subtreeLocked(id)||pendingEdit)return;
+    const auto signature=captureArrangement().signature;
+    juce::Component::SafePointer<MultiMidiClipController> safe(this);
+    auto* panel=new GroupMacroPanel(permanentGroups.at(id).macros,[safe,id,signature](const auto& macros){
+        return safe&&!safe->stopped.load()&&safe->captureArrangement().signature==signature&&safe->applyGroupMacros(id,macros);
+    });
+    juce::DialogWindow::LaunchOptions options;options.dialogTitle=juce::String::fromUTF8("LIBERTY — MACROS DE GROUPE");
+    options.dialogBackgroundColour=juce::Colour(0xff101821);options.useNativeTitleBar=false;
+    options.escapeKeyTriggersCloseButton=true;options.resizable=false;options.componentToCentreAround=&owner;
+    options.content.setOwned(panel);options.launchAsync();
+}
 class PermanentGroupManager final:public juce::Component{
     juce::Component::SafePointer<MultiMidiClipController> controller;
     juce::TextEditor search,name;
@@ -2874,7 +3070,7 @@ class PermanentGroupManager final:public juce::Component{
     juce::Label groupPageLabel,memberPageLabel,status;
     juce::TextButton previous{"<"},next{">"},memberPrevious{"<"},memberNext{">"},
         choose{juce::String::fromUTF8("Sélectionner")},chooseAll{juce::String::fromUTF8("Tout sélectionner")},locate{"Localiser"},properties{"Appliquer"},
-        parentButton{juce::String::fromUTF8("Parent…")},fold{juce::String::fromUTF8("Replier")},containerButton{"+ Conteneur"},presetButton{juce::String::fromUTF8("Modèles…")},controlButton{juce::String::fromUTF8("Contrôles…")},automationButton{"Automation"},soloButton{"Solo"},isolateButton{"Isoler"},lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
+        parentButton{juce::String::fromUTF8("Parent…")},fold{juce::String::fromUTF8("Replier")},containerButton{"+ Conteneur"},presetButton{juce::String::fromUTF8("Modèles…")},controlButton{juce::String::fromUTF8("Contrôles…")},automationButton{"Automation"},macroButton{"Macros"},soloButton{"Solo"},isolateButton{"Isoler"},lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
     std::array<juce::TextButton,8> rows;
     std::vector<juce::String> ids;
     std::vector<GroupTreeRow> treeRows;
@@ -2936,6 +3132,7 @@ class PermanentGroupManager final:public juce::Component{
             if(member.key.startsWith("audio:")||member.row>=controller->owner.getAudioTrackCount()+controller->owner.getMidiTrackCount()){audible=true;break;}
         const bool audioMember=std::any_of(members.begin(),members.end(),[](const auto& m){return m.key.startsWith("audio:");});
         automationButton.setEnabled(has&&!locked&&audioMember);
+        macroButton.setEnabled(has&&!locked&&audioMember);
         soloButton.setEnabled(audible);isolateButton.setEnabled(audible||!controller->auditionGroups.empty());
         const bool soloOn=has&&controller->auditionGroups.count(selected)&&!controller->isolationMode;
         const bool isolationOn=controller->isolationMode&&!controller->auditionGroups.empty();
@@ -3092,7 +3289,7 @@ class PermanentGroupManager final:public juce::Component{
     }
 public:
     explicit PermanentGroupManager(MultiMidiClipController* c):controller(c){
-        for(auto* component:std::initializer_list<juce::Component*>{&search,&name,&filter,&colour,&groupPageLabel,&memberPageLabel,&status,&previous,&next,&memberPrevious,&memberNext,&choose,&chooseAll,&locate,&properties,&lock,&duplicate,&mute,&unmute,&dissolve,&parentButton,&fold,&containerButton,&presetButton,&controlButton,&automationButton,&soloButton,&isolateButton,&closeButton})addAndMakeVisible(component);
+        for(auto* component:std::initializer_list<juce::Component*>{&search,&name,&filter,&colour,&groupPageLabel,&memberPageLabel,&status,&previous,&next,&memberPrevious,&memberNext,&choose,&chooseAll,&locate,&properties,&lock,&duplicate,&mute,&unmute,&dissolve,&parentButton,&fold,&containerButton,&presetButton,&controlButton,&automationButton,&macroButton,&soloButton,&isolateButton,&closeButton})addAndMakeVisible(component);
         for(size_t i=0;i<rows.size();++i){addAndMakeVisible(rows[i]);rows[i].addMouseListener(this,false);rows[i].onClick=[this,i]{const size_t n=(size_t)page*8+i;if(n<ids.size()){selected=ids[n];memberPage=0;refresh();}};}
         search.setTextToShowWhenEmpty("Rechercher un groupe",juce::Colour(0xff9eb4c5));name.setInputRestrictions(80);
         filter.addItem("Toutes les couleurs",1);filter.addItemList(permanentColourNames(),2);filter.setSelectedId(1,juce::dontSendNotification);
@@ -3105,6 +3302,7 @@ public:
         lock.onClick=[this]{act(3);};duplicate.onClick=[this]{act(4);};mute.onClick=[this]{act(5);};unmute.onClick=[this]{act(6);};dissolve.onClick=[this]{act(7);};
         chooseAll.onClick=[this]{if(controller&&!controller->stopped.load())controller->selectPermanentIds(std::set<juce::String>(ids.begin(),ids.end()));};
         presetButton.onClick=[this]{showStructurePresets();};controlButton.onClick=[this]{showGroupControls();};
+        macroButton.onClick=[this]{if(controller)controller->showGroupMacros(selected);};
         automationButton.onClick=[this]{
             if(!controller||controller->subtreeLocked(selected)||!controller->selectPermanentIds({selected}))return;
             controller->showClipAutomation(controller->selectedAudio);
@@ -3142,7 +3340,7 @@ public:
     }
     void close(){if(auto* w=findParentComponentOfClass<juce::DialogWindow>())w->exitModalState(0);}
     void resized()override{
-        search.setBounds(16,36,350,28);filter.setBounds(382,36,402,28);fold.setBounds(260,66,106,24);containerButton.setBounds(126,66,126,24);presetButton.setBounds(646,66,138,24);automationButton.setBounds(506,66,132,24);controlButton.setBounds(646,4,138,28);soloButton.setBounds(440,4,90,28);isolateButton.setBounds(538,4,100,28);
+        search.setBounds(16,36,350,28);filter.setBounds(382,36,402,28);fold.setBounds(260,66,106,24);containerButton.setBounds(126,66,126,24);presetButton.setBounds(646,66,138,24);automationButton.setBounds(506,66,132,24);macroButton.setBounds(338,4,94,28);controlButton.setBounds(646,4,138,28);soloButton.setBounds(440,4,90,28);isolateButton.setBounds(538,4,100,28);
         for(int i=0;i<8;++i)rows[(size_t)i].setBounds(16,92+i*27,350,25);
         previous.setBounds(16,310,36,26);groupPageLabel.setBounds(56,310,270,26);next.setBounds(330,310,36,26);
         memberPrevious.setBounds(382,310,36,26);memberPageLabel.setBounds(422,310,322,26);memberNext.setBounds(748,310,36,26);
@@ -3161,7 +3359,7 @@ public:
     }
     void paint(juce::Graphics& g)override{
         g.fillAll(juce::Colour(0xff101821));g.setColour(juce::Colour(0xffd9eafa));g.setFont(16.f);
-        g.drawText("PROFESSIONAL GROUP MANAGER",16,4,416,28,juce::Justification::centredLeft);
+        g.drawText("PROFESSIONAL GROUP MANAGER",16,4,314,28,juce::Justification::centredLeft);
         g.setFont(13.f);g.drawText("GROUPES",16,66,102,24,juce::Justification::centredLeft);
         g.drawText("MEMBRES",382,66,116,24,juce::Justification::centredLeft);
         for(int i=0;i<8;++i){const auto n=(size_t)(memberPage*8+i);if(n>=members.size())break;
@@ -4158,6 +4356,27 @@ bool runArrangementTests(){
             require(undoArrangement(false)&&undoArrangement(false),"pan undo chain");
             require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().clipPan-beforePan)<1.e-6,"pan undo baseline");
             require(selectPermanentIds({groupId}),"pan restore selection");
+        }
+        {
+            auto macros=permanentGroups.at(groupId).macros;auto& m=macros[0];
+            m.name=juce::String::fromUTF8("Équilibre");m.colour=6;m.gain=m.pan=true;
+            m.gainMin=-12.;m.gainMax=0.;m.panMin=-100.;m.panMax=100.;m.invertPan=true;m.value=.25;
+            const auto baseline=owner.audioEngine.getArrangementAudioClips(0).front();
+            GroupMacroPanel panel(macros,[](const GroupMacros&){return true;});require(panel.layoutValid(),"macro panel layout");
+            require(applyGroupMacros(groupId,macros),"macro multi target apply");
+            auto actual=owner.audioEngine.getArrangementAudioClips(0).front();
+            require(std::abs(actual.clipGain-std::pow(10.,-9./20.))<1.e-6&&std::abs(actual.clipPan-.5f)<1.e-6,"macro audio targets");
+            auto conflict=macros;conflict[0].value=.6;conflict[1].gain=true;
+            require(!applyGroupMacros(groupId,conflict),"macro conflicting target refusal");
+            auto invalid=macros;invalid[0].gainMin=13.;require(!applyGroupMacros(groupId,invalid),"macro invalid range");
+            juce::XmlElement xml("Project");savePermanentGroups(xml);loadPermanentGroups(xml);
+            const auto& restored=permanentGroups.at(groupId).macros[0];
+            require(restored.name==m.name&&restored.colour==6&&restored.invertPan&&restored.value==.25&&restored.gain&&restored.pan,"macro XML roundtrip");
+            require(undoArrangement(false),"macro undo");
+            actual=owner.audioEngine.getArrangementAudioClips(0).front();
+            require(actual.clipGain==baseline.clipGain&&actual.clipPan==baseline.clipPan&&permanentGroups.at(groupId).macros[0].isDefault(),"macro undo exact");
+            require(undoArrangement(true)&&permanentGroups.at(groupId).macros[0].gain,"macro redo");
+            require(undoArrangement(false)&&selectPermanentIds({groupId}),"macro fixture restore");
         }
         require(applyGroupClipOperation(35)&&midiClips.front().muted&&owner.audioEngine.getArrangementAudioClips(0).front().muted,"group mixed mute");
         require(undoArrangement(false),"undo group mixed mute");
