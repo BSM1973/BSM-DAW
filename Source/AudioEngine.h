@@ -265,6 +265,14 @@ public:
         return std::atomic_load(&groupAudition);
     }
 
+    struct GroupMacroPreviewValue {
+        bool gain=false,pan=false;
+        float gainValue=1.f,panValue=0.f;
+    };
+    using GroupMacroPreview=std::map<juce::String,GroupMacroPreviewValue>;
+    void setGroupMacroPreview(std::shared_ptr<const GroupMacroPreview> preview) noexcept {
+        std::atomic_store(&groupMacroPreview,std::move(preview));
+    }
     int getAudioTrackCount() const noexcept;
     int addAudioTrack();
     bool removeAudioTrack(int trackIndex);
@@ -569,6 +577,10 @@ private:
         LibertyMixConsoleMeter::StereoCorrelationAccumulator meterCorrelation;
         std::atomic<float> clipGain { 1.0f };
         std::atomic<float> clipPan { 0.0f };
+        // Callback-owned audition smoothing, never persisted.
+        float macroSmoothedGain=1.f,macroSmoothedPan=0.f;
+        bool macroSmoothing=false;
+        std::int64_t macroNextSample=-1;
         ClipAutomationPtr gainAutomation,panAutomation;
         std::atomic<double> clipPitch { 0.0 };
         std::atomic<bool> clipReverse { false };
@@ -606,6 +618,7 @@ private:
 
     static std::shared_ptr<AudioTrackState> prepareAudioVoice(const AudioClipMetadata&);
     std::shared_ptr<const GroupAuditionMask> groupAudition;
+    std::shared_ptr<const GroupMacroPreview> groupMacroPreview;
     void mixAudioVoice(AudioTrackState&,float,float,double,std::int64_t,float* const*,int,int,bool applyAudition=true);
 
     static constexpr std::size_t maxMidiPlaybackNotes = 256;

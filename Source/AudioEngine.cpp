@@ -2312,13 +2312,36 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
         const float clipPan=track.clipPan.load(std::memory_order_relaxed);
         const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f) * (clipPan>0.f?1.f-clipPan:1.f);
         const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f) * (clipPan<0.f?1.f+clipPan:1.f);
+        const auto preview=applyAudition?std::atomic_load(&groupMacroPreview):std::shared_ptr<const GroupMacroPreview>{};
+        const auto found=preview?preview->find(track.clipId):GroupMacroPreview::const_iterator{};
+        const bool previewActive=preview&&found!=preview->end();
+        const float targetGain=previewActive&&found->second.gain?found->second.gainValue:staticGain;
+        const float targetPan=previewActive&&found->second.pan?found->second.panValue:clipPan;
+        const bool smooth=applyAudition&&(previewActive||track.macroSmoothing);
+        if(smooth){
+            if(!track.macroSmoothing||track.macroNextSample!=mixStart){
+                track.macroSmoothedGain=previewActive?staticGain:targetGain;
+                track.macroSmoothedPan=previewActive?clipPan:targetPan;
+            }
+            track.macroSmoothing=true;track.macroNextSample=mixEnd;
+        }
+        const float smoothing=(float)(1.-std::exp(-1./juce::jmax(1.,rate*.005)));
         const auto gainCurve=std::atomic_load(&track.gainAutomation);
         const auto panCurve=std::atomic_load(&track.panAutomation);
         const double clipSamples=(double)juce::jmax<std::int64_t>(1,clipEnd-startSample);
         auto automatedGains=[&](int sample){
-            if(!gainCurve&&!panCurve)return std::pair<float,float>{leftGain,rightGain};
+            if(!gainCurve&&!panCurve&&!smooth)return std::pair<float,float>{leftGain,rightGain};
             const double phase=juce::jlimit(0.,1.,(sourceOffset+sample)/clipSamples);
             float g=staticGain,p=clipPan;
+            if(smooth){
+                track.macroSmoothedGain+=(targetGain-track.macroSmoothedGain)*smoothing;
+                track.macroSmoothedPan+=(targetPan-track.macroSmoothedPan)*smoothing;
+                g=track.macroSmoothedGain;p=track.macroSmoothedPan;
+                if(!previewActive&&std::abs(g-targetGain)<1.e-5f&&std::abs(p-targetPan)<1.e-5f){
+                    track.macroSmoothedGain=targetGain;track.macroSmoothedPan=targetPan;track.macroSmoothing=false;
+                    g=targetGain;p=targetPan;
+                }
+            }
             if(gainCurve){
                 const float v=evaluateClipAutomation(*gainCurve,phase);
                 g=juce::jlimit(0.f,4.f,gainCurve->relative?g*v:v);
