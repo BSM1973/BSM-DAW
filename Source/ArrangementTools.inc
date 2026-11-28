@@ -9500,8 +9500,9 @@ bool runArrangementTests(){
                 AudioEngine transitionEngine;
                 auto constant=left;constant.id="audition-transition";
                 constant.startSeconds=0.;constant.lengthSeconds=.25;constant.sourceSampleRate=48000.;
-                constant.sourceBuffer=std::make_shared<juce::AudioBuffer<float>>(2,12000);
-                for(int ch=0;ch<2;++ch)for(int i=0;i<12000;++i)constant.sourceBuffer->setSample(ch,i,.25f);
+                auto constantSource=std::make_shared<juce::AudioBuffer<float>>(2,12000);
+                for(int ch=0;ch<2;++ch)for(int i=0;i<12000;++i)constantSource->setSample(ch,i,.25f);
+                constant.sourceBuffer=constantSource;
                 constant.trimStartFraction=0.;constant.trimEndFraction=1.;constant.offsetSeconds=0.;
                 constant.envelopeLengthSeconds=0.;constant.clipGain=1.f;constant.clipPan=0.f;
                 constant.gainAutomation.reset();constant.panAutomation.reset();constant.reverse=false;constant.pitchSemitones=0.;constant.warp={};constant.spectralCache.reset();
