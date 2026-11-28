@@ -419,7 +419,9 @@ public:
     struct ClipAutomationPoint {
         double time=0.;
         float value=0.f;
-        int shape=0; // outgoing: linear, quadratic (legacy), S, exponential, logarithmic
+        int shape=0; // outgoing: linear, quadratic (legacy), S, exponential, logarithmic, cubic Bezier
+        double domainStart=0.,domainEnd=1.; // retained subsegment of the original shape
+        double handle1=1./3.,handle2=2./3.;
     };
     struct ClipAutomationCurve {
         bool relative=true;
@@ -429,6 +431,7 @@ public:
     static constexpr int maxClipAutomationPoints=128;
     static bool validClipAutomation(const ClipAutomationCurve&,bool pan) noexcept;
     static float evaluateClipAutomation(const ClipAutomationCurve&,double time) noexcept;
+    static bool cropClipAutomation(ClipAutomationPtr& curve,double from,double to);
     struct AudioClipMetadata
     {
         juce::String id;

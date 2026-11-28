@@ -242,6 +242,9 @@ bool AudioEngine::splitArrangementAudioClip(int track,const juce::String& id,dou
         auto right=left;right.id=juce::Uuid().toString();right.startSeconds=seconds;
         if(left.envelopeLengthSeconds<=0)left.envelopeLengthSeconds=left.offsetSeconds+left.lengthSeconds;
         right.envelopeLengthSeconds=left.envelopeLengthSeconds;
+        const double phase=cut/left.lengthSeconds;
+        if(!cropClipAutomation(left.gainAutomation,0.,phase)||!cropClipAutomation(left.panAutomation,0.,phase)||
+           !cropClipAutomation(right.gainAutomation,phase,1.)||!cropClipAutomation(right.panAutomation,phase,1.))return false;
         right.offsetSeconds+=cut;right.lengthSeconds-=cut;left.lengthSeconds=cut;
         clips.insert(clips.begin()+(int)i+1,std::move(right));
         return replaceArrangementAudioClips(track,clips);

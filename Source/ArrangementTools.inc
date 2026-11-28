@@ -912,6 +912,7 @@ class ClipAutomationPanel final:public juce::Component{
     std::array<Curve,2> curves;
     std::array<bool,2> active{{false,false}},dirty{{false,false}};
     juce::ComboBox parameter,mode,shape;
+    juce::Slider handle1,handle2;
     juce::ToggleButton snap{juce::String::fromUTF8("Grille musicale")};
     juce::TextButton copy{"Copier"},cut{"Couper"},paste{"Coller"},duplicate{"Dupliquer"};
     double gridStep=0.,gridOrigin=0.;
@@ -977,6 +978,10 @@ class ClipAutomationPanel final:public juce::Component{
         const bool exists=selected>=0&&selected<(int)c.points.size();
         shape.setSelectedId(exists?c.points[(size_t)selected].shape+1:1,juce::dontSendNotification);
         shape.setEnabled(exists&&selected+1<(int)c.points.size());
+        const bool bezier=exists&&selected+1<(int)c.points.size()&&c.points[(size_t)selected].shape==5;
+        handle1.setEnabled(bezier);handle2.setEnabled(bezier);
+        handle1.setValue(bezier?c.points[(size_t)selected].handle1:1./3.,juce::dontSendNotification);
+        handle2.setValue(bezier?c.points[(size_t)selected].handle2:2./3.,juce::dontSendNotification);
         remove.setEnabled(hasInteriorSelection());copy.setEnabled(hasInteriorSelection());cut.setEnabled(hasInteriorSelection());
         duplicate.setEnabled(hasInteriorSelection());paste.setEnabled(!clipboard.empty()&&clipboardChannel==ch);
         clear.setEnabled(active[(size_t)ch]);repaint();
@@ -992,13 +997,16 @@ public:
         }
         parameter.addItem("Gain (linéaire)",1);parameter.addItem("Panoramique",2);parameter.setSelectedId(1);
         mode.addItem("Relatif",1);mode.addItem("Absolu",2);
-        shape.addItem(juce::String::fromUTF8("Linéaire"),1);shape.addItem("Quadratique",2);shape.addItem("Courbe en S",3);shape.addItem("Exponentielle",4);shape.addItem("Logarithmique",5);
-        for(auto* c:std::initializer_list<juce::Component*>{&parameter,&mode,&shape,&snap,&remove,&clear,&apply,&cancel,&copy,&cut,&paste,&duplicate})addAndMakeVisible(c);
+        shape.addItem(juce::String::fromUTF8("Linéaire"),1);shape.addItem("Quadratique",2);shape.addItem("Courbe en S",3);shape.addItem("Exponentielle",4);shape.addItem("Logarithmique",5);shape.addItem(juce::String::fromUTF8("Bézier cubique"),6);
+        for(auto* c:std::initializer_list<juce::Component*>{&parameter,&mode,&shape,&snap,&remove,&clear,&apply,&cancel,&copy,&cut,&paste,&duplicate,&handle1,&handle2})addAndMakeVisible(c);
+        for(auto* slider:{&handle1,&handle2}){slider->setSliderStyle(juce::Slider::LinearHorizontal);slider->setRange(0.,1.,.001);slider->setTextBoxStyle(juce::Slider::TextBoxRight,false,58,24);}
+        handle1.onValueChange=[this]{auto& pts=curves[(size_t)channel()].points;if(selected<0||selected+1>=(int)pts.size()||pts[(size_t)selected].shape!=5)return;auto& p=pts[(size_t)selected];p.handle1=std::min(handle1.getValue(),p.handle2);p.domainStart=0.;p.domainEnd=1.;mark();};
+        handle2.onValueChange=[this]{auto& pts=curves[(size_t)channel()].points;if(selected<0||selected+1>=(int)pts.size()||pts[(size_t)selected].shape!=5)return;auto& p=pts[(size_t)selected];p.handle2=std::max(handle2.getValue(),p.handle1);p.domainStart=0.;p.domainEnd=1.;mark();};
         snap.setEnabled(gridStep>0.);snap.setToggleState(gridStep>0.,juce::dontSendNotification);
         if(gridStep<=0.)snap.setButtonText("Grille indisponible");
         parameter.onChange=[this]{selected=-1;selection.clear();refresh();};
         mode.onChange=[this]{curves[(size_t)channel()].relative=mode.getSelectedId()==1;mark();};
-        shape.onChange=[this]{auto& points=curves[(size_t)channel()].points;for(int i:selection)if(i>=0&&i+1<(int)points.size())points[(size_t)i].shape=shape.getSelectedId()-1;mark();};
+        shape.onChange=[this]{auto& points=curves[(size_t)channel()].points;for(int i:selection)if(i>=0&&i+1<(int)points.size()){auto& p=points[(size_t)i];p.shape=shape.getSelectedId()-1;p.domainStart=0.;p.domainEnd=1.;}mark();};
         remove.onClick=[this]{if(hasInteriorSelection())deleteSelection();};
         copy.onClick=[this]{copySelection();};cut.onClick=[this]{if(copySelection())deleteSelection();};
         paste.onClick=[this]{pasteSelection();};duplicate.onClick=[this]{if(copySelection())pasteSelection();};
@@ -1014,13 +1022,14 @@ public:
             if(onApply&&onApply(result,dirty))close();
             else juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Automation",juce::String::fromUTF8("Le projet a changé ou les clips sont verrouillés."));
         };
-        setSize(660,448);refresh();
+        setSize(660,488);refresh();
     }
     void resized()override{
         parameter.setBounds(20,12,200,30);mode.setBounds(230,12,145,30);shape.setBounds(385,12,255,30);
         snap.setBounds(20,312,265,28);remove.setBounds(295,312,165,28);clear.setBounds(470,312,170,28);
         copy.setBounds(20,350,145,28);cut.setBounds(175,350,145,28);paste.setBounds(330,350,145,28);duplicate.setBounds(485,350,155,28);
-        cancel.setBounds(380,396,120,32);apply.setBounds(510,396,130,32);
+        handle1.setBounds(110,390,205,28);handle2.setBounds(435,390,205,28);
+        cancel.setBounds(380,438,120,32);apply.setBounds(510,438,130,32);
     }
     void paint(juce::Graphics& g)override{
         g.fillAll(juce::Colour(0xff101821));const auto r=plot();
@@ -1051,6 +1060,7 @@ public:
         g.drawText(juce::String(low(),1),2,284,40,20,juce::Justification::centredRight);
         g.drawText("0 %",46,294,80,18,juce::Justification::centredLeft);
         g.drawText("100 %",534,294,80,18,juce::Justification::centredRight);
+        g.drawText("Tension 1",20,390,88,28,juce::Justification::centredLeft);g.drawText("Tension 2",340,390,90,28,juce::Justification::centredLeft);
     }
     void mouseDown(const juce::MouseEvent& e)override{
         if(!plot().expanded(5.f).contains(e.position))return;
@@ -2023,6 +2033,7 @@ bool applyGroupClipOperation(int command,double value=0.0){
                 if(!std::isfinite(length)||length<.01)valid=false;
                 else {
                     if(clip.envelopeLengthSeconds<=0)clip.envelopeLengthSeconds=clip.offsetSeconds+clip.lengthSeconds;
+                    if(!AudioEngine::cropClipAutomation(clip.gainAutomation,0.,length/clip.lengthSeconds)||!AudioEngine::cropClipAutomation(clip.panAutomation,0.,length/clip.lengthSeconds)){valid=false;continue;}
                     changed=changed||length!=clip.lengthSeconds;clip.lengthSeconds=length;
                     clip.fadeInSeconds=std::min(clip.fadeInSeconds,length);clip.fadeOutSeconds=std::min(clip.fadeOutSeconds,length);
                     touchedAudio.insert(lane);
@@ -2316,6 +2327,9 @@ bool splitSelectedAudioAt(double seconds){
             auto right=left;right.id=juce::Uuid().toString();right.startSeconds=seconds;
             if(left.envelopeLengthSeconds<=0)left.envelopeLengthSeconds=left.offsetSeconds+left.lengthSeconds;
             right.envelopeLengthSeconds=left.envelopeLengthSeconds;
+            const double phase=cut/left.lengthSeconds;
+            if(!AudioEngine::cropClipAutomation(left.gainAutomation,0.,phase)||!AudioEngine::cropClipAutomation(left.panAutomation,0.,phase)||
+               !AudioEngine::cropClipAutomation(right.gainAutomation,phase,1.)||!AudioEngine::cropClipAutomation(right.panAutomation,phase,1.))return false;
             right.offsetSeconds+=cut;right.lengthSeconds-=cut;left.lengthSeconds=cut;
             if(!AudioEngine::validAudioClip(left)||!AudioEngine::validAudioClip(right))return false;
             selection.insert({lane,right.id});
@@ -2540,6 +2554,8 @@ bool applySilencePlan(const std::vector<SilenceJob>& jobs,const juce::String& si
             piece.lengthSeconds=std::min(original.lengthSeconds,range.end/rate)-range.start/rate;
             piece.trimStartFraction=(job.sourceStart+range.start)/n;piece.trimEndFraction=(job.sourceStart+range.end)/n;
             piece.offsetSeconds=piece.envelopeLengthSeconds=0.;
+            if(!AudioEngine::cropClipAutomation(piece.gainAutomation,range.start/rate/original.lengthSeconds,(range.start/rate+piece.lengthSeconds)/original.lengthSeconds)||
+               !AudioEngine::cropClipAutomation(piece.panAutomation,range.start/rate/original.lengthSeconds,(range.start/rate+piece.lengthSeconds)/original.lengthSeconds))return false;
             const double fade=std::min(fadeMs*.001,piece.lengthSeconds*.5);
             piece.fadeInSeconds=range.start>0?fade:original.fadeInSeconds;
             piece.fadeOutSeconds=range.end<job.count?fade:original.fadeOutSeconds;
@@ -3867,6 +3883,14 @@ void dragAudio(juce::Point<int> p, bool fineFadeAdjustment=false){
             if(c.envelopeLengthSeconds<=0)c.envelopeLengthSeconds=c.offsetSeconds+c.lengthSeconds;c.lengthSeconds=audioDragLength;
         }
     }
+    if(audioDragMode==2||audioDragMode==3){
+        for(auto& clip:clips)if(clip.id==audioDragOriginal.id){
+            const double from=(clip.startSeconds-audioDragOriginal.startSeconds)/audioDragOriginal.lengthSeconds;
+            const double to=from+clip.lengthSeconds/audioDragOriginal.lengthSeconds;
+            clip.gainAutomation=audioDragOriginal.gainAutomation;clip.panAutomation=audioDragOriginal.panAutomation;
+            if(!AudioEngine::cropClipAutomation(clip.gainAutomation,from,to)||!AudioEngine::cropClipAutomation(clip.panAutomation,from,to))return;
+        }
+    }
     if(owner.audioEngine.replaceArrangementAudioClips(audioDragTrack,clips)){
         // A fade edits envelope metadata only; no waveform peak cache needs rebuilding.
         if(audioDragMode==8||audioDragMode==9||audioDragMode==10||audioDragMode==11){owner.repaint();repaint();}
@@ -3927,6 +3951,22 @@ bool runArrangementTests(){
             envelope->points.front().shape=4;
             require(AudioEngine::validClipAutomation(*envelope,false)&&AudioEngine::evaluateClipAutomation(*envelope,.5)>.5f,"automation logarithmic midpoint");
             require(AudioEngine::evaluateClipAutomation(*envelope,0.)==0.f&&AudioEngine::evaluateClipAutomation(*envelope,1.)==1.f,"automation exact endpoints");
+            for(int shape=0;shape<=5;++shape){
+                auto original=std::make_shared<AudioEngine::ClipAutomationCurve>();original->relative=false;
+                original->points={{0.,.2f,shape},{.6,1.f,shape},{1.,.4f,0}};
+                original->points.front().handle1=.05;original->points.front().handle2=.7;
+                AudioEngine::ClipAutomationPtr l=original,r=original,trim=original;
+                require(AudioEngine::cropClipAutomation(l,0.,.37)&&AudioEngine::cropClipAutomation(r,.37,1.)&&AudioEngine::cropClipAutomation(trim,-.2,1.3),"automation crop");
+                require(AudioEngine::validClipAutomation(*l,false)&&AudioEngine::validClipAutomation(*r,false)&&AudioEngine::validClipAutomation(*trim,false),"automation cropped validation");
+                for(int i=0;i<=100;++i){const double t=i/100.;
+                    require(std::abs(AudioEngine::evaluateClipAutomation(*l,t)-AudioEngine::evaluateClipAutomation(*original,.37*t))<2.e-6,"automation left shape parity");
+                    require(std::abs(AudioEngine::evaluateClipAutomation(*r,t)-AudioEngine::evaluateClipAutomation(*original,.37+.63*t))<2.e-6,"automation right shape parity");
+                    require(std::abs(AudioEngine::evaluateClipAutomation(*trim,t)-AudioEngine::evaluateClipAutomation(*original,-.2+1.5*t))<2.e-6,"automation extension shape parity");
+                }
+                auto saved=neutral;saved.gainAutomation=r;juce::XmlElement x("Clip");AudioEngine::writeAudioClipProperties(x,saved);
+                const auto restored=AudioEngine::readAudioClipProperties(x);
+                require(restored.gainAutomation&&std::abs(AudioEngine::evaluateClipAutomation(*restored.gainAutomation,.25)-AudioEngine::evaluateClipAutomation(*r,.25))<2.e-6,"automation crop XML");
+            }
             envelope->points.front().shape=0;
             auto automated=neutral;automated.gainAutomation=envelope;
             const auto rendered=panEngine.renderArrangementAudioClip(automated);

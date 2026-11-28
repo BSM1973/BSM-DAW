@@ -1680,10 +1680,24 @@ bool AudioEngine::validClipAutomation(const ClipAutomationCurve& curve,bool pan)
     for(const auto& p:curve.points){
         if(!std::isfinite(p.time)||p.time<0.||p.time>1.||p.time<=previous||
            !std::isfinite(p.value)||p.value<(pan?-1.f:0.f)||p.value>(pan?1.f:4.f)||
-           p.shape<0||p.shape>4)return false;
+           p.shape<0||p.shape>5||!std::isfinite(p.domainStart)||!std::isfinite(p.domainEnd)||
+           p.domainStart<0.||p.domainEnd>1.||p.domainEnd<=p.domainStart||
+           !std::isfinite(p.handle1)||!std::isfinite(p.handle2)||p.handle1<0.||p.handle2>1.||p.handle1>p.handle2)return false;
         previous=p.time;
     }
     return true;
+}
+namespace {
+double clipAutomationShape(const AudioEngine::ClipAutomationPoint& a,double x) noexcept {
+    switch(a.shape){
+        case 1:return x*x;
+        case 2:return x*x*(3.-2.*x);
+        case 3:return std::expm1(4.*x)/std::expm1(4.);
+        case 4:return std::log1p(std::expm1(4.)*x)/4.;
+        case 5:{const double u=1.-x;return 3.*u*u*x*a.handle1+3.*u*x*x*a.handle2+x*x*x;}
+        default:return x;
+    }
+}
 }
 float AudioEngine::evaluateClipAutomation(const ClipAutomationCurve& curve,double time) noexcept
 {
@@ -1696,11 +1710,45 @@ float AudioEngine::evaluateClipAutomation(const ClipAutomationCurve& curve,doubl
     if(right==points.begin()||right==points.end())return points.back().value;
     const auto& b=*right;const auto& a=*(right-1);
     double x=(time-a.time)/(b.time-a.time);
-    if(a.shape==1)x=x*x;
-    else if(a.shape==2)x=x*x*(3.-2.*x);
-    else if(a.shape==3)x=std::expm1(4.*x)/std::expm1(4.);
-    else if(a.shape==4)x=std::log1p(std::expm1(4.)*x)/4.;
+    if(a.domainStart==0.&&a.domainEnd==1.)x=clipAutomationShape(a,x);
+    else{
+        const double lo=clipAutomationShape(a,a.domainStart),hi=clipAutomationShape(a,a.domainEnd);
+        if(hi-lo>1.e-15)x=juce::jlimit(0.,1.,(clipAutomationShape(a,a.domainStart+(a.domainEnd-a.domainStart)*x)-lo)/(hi-lo));
+    }
     return a.value+(b.value-a.value)*(float)x;
+}
+bool AudioEngine::cropClipAutomation(ClipAutomationPtr& curve,double from,double to)
+{
+    if(!curve)return true;
+    if(!std::isfinite(from)||!std::isfinite(to)||to<=from)return false;
+    if(from==0.&&to==1.)return true;
+    try{
+        auto next=std::make_shared<ClipAutomationCurve>();next->relative=curve->relative;
+        std::vector<double> cuts{from};
+        for(const auto& p:curve->points)if(p.time>from&&p.time<to)cuts.push_back(p.time);
+        cuts.push_back(to);
+        if(cuts.size()>maxClipAutomationPoints)return false;
+        for(size_t i=0;i<cuts.size();++i){
+            const double x=cuts[i];
+            ClipAutomationPoint p{(x-from)/(to-from),evaluateClipAutomation(*curve,x),0};
+            if(i+1<cuts.size()&&x>=0.&&x<1.&&cuts[i+1]<=1.){
+                const auto right=std::upper_bound(curve->points.begin(),curve->points.end(),x,
+                    [](double t,const ClipAutomationPoint& point){return t<point.time;});
+                if(right!=curve->points.begin()&&right!=curve->points.end()){
+                    const auto& src=*(right-1);const double width=right->time-src.time;
+                    const double a=(x-src.time)/width,b=(cuts[i+1]-src.time)/width;
+                    p.shape=src.shape;p.handle1=src.handle1;p.handle2=src.handle2;
+                    p.domainStart=juce::jlimit(0.,1.,src.domainStart+(src.domainEnd-src.domainStart)*a);
+                    p.domainEnd=juce::jlimit(0.,1.,src.domainStart+(src.domainEnd-src.domainStart)*b);
+                    if(p.domainEnd<=p.domainStart){p.shape=0;p.domainStart=0.;p.domainEnd=1.;}
+                }
+            }
+            if(i==0)p.time=0.;else if(i+1==cuts.size())p.time=1.;
+            if(!next->points.empty()&&p.time<=next->points.back().time)return false;
+            next->points.push_back(p);
+        }
+        curve=next;return true;
+    }catch(...){return false;}
 }
 void AudioEngine::writeAudioClipProperties(juce::XmlElement& element,const AudioClipMetadata& clip)
 {
@@ -1719,6 +1767,8 @@ void AudioEngine::writeAudioClipProperties(juce::XmlElement& element,const Audio
         for(const auto& point:curve->points){
             auto* p=xml->createNewChildElement("Point");
             p->setAttribute("time",point.time);p->setAttribute("value",(double)point.value);p->setAttribute("shape",point.shape);
+            if(point.domainStart!=0.||point.domainEnd!=1.){p->setAttribute("domainStart",point.domainStart);p->setAttribute("domainEnd",point.domainEnd);}
+            if(point.shape==5){p->setAttribute("handle1",point.handle1);p->setAttribute("handle2",point.handle2);}
         }
     };
     writeAutomation("GainAutomation",clip.gainAutomation);writeAutomation("PanAutomation",clip.panAutomation);
@@ -1761,7 +1811,9 @@ AudioEngine::AudioClipMetadata AudioEngine::readAudioClipProperties(const juce::
             if(!p->hasTagName("Point")||!p->hasAttribute("time")||!p->hasAttribute("value")||
                !p->hasAttribute("shape")||curve->points.size()>=maxClipAutomationPoints)return {};
             curve->points.push_back({p->getDoubleAttribute("time",-1.),
-                (float)p->getDoubleAttribute("value",5.),p->getIntAttribute("shape",-1)});
+                (float)p->getDoubleAttribute("value",5.),p->getIntAttribute("shape",-1),
+                p->getDoubleAttribute("domainStart",0.),p->getDoubleAttribute("domainEnd",1.),
+                p->getDoubleAttribute("handle1",1./3.),p->getDoubleAttribute("handle2",2./3.)});
         }
         return validClipAutomation(*curve,pan)?ClipAutomationPtr(curve):ClipAutomationPtr{};
     };
