@@ -408,6 +408,7 @@ public:
         double trimEndFraction = 1.0;
         // Non-destructive clip controls for the dock audio editor.
         float clipGain = 1.0f;
+        float clipPan = 0.0f; // independent stereo balance, -1 left / +1 right
         double pitchSemitones = 0.0;
         bool reverse = false;
         bool muted = false;
@@ -552,6 +553,7 @@ private:
         std::atomic<std::uint64_t> meterRmsLeft { 0 }, meterRmsRight { 0 };
         LibertyMixConsoleMeter::StereoCorrelationAccumulator meterCorrelation;
         std::atomic<float> clipGain { 1.0f };
+        std::atomic<float> clipPan { 0.0f };
         std::atomic<double> clipPitch { 0.0 };
         std::atomic<bool> clipReverse { false };
         std::atomic<float> pan { 0.0f };

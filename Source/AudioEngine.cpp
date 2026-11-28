@@ -1407,7 +1407,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     std::atomic_store(&track.buffer, std::move(newBuffer));
     track.contentRevision.fetch_add(1, std::memory_order_relaxed);
     track.clipId = juce::Uuid().toString();
-    track.clipGain.store(1);track.clipPitch.store(0);track.clipReverse.store(false);track.clipMuted.store(false);
+    track.clipGain.store(1);track.clipPan.store(0);track.clipPitch.store(0);track.clipReverse.store(false);track.clipMuted.store(false);
     track.clipOffset.store(0);track.clipEnvelopeLength.store(0);track.clipFadeIn.store(0);track.clipFadeOut.store(0);
     track.autoCrossfadeInStart.store(-1);track.autoCrossfadeInEnd.store(-1);
     track.autoCrossfadeOutStart.store(-1);track.autoCrossfadeOutEnd.store(-1);
@@ -1663,6 +1663,7 @@ void AudioEngine::writeAudioClipProperties(juce::XmlElement& element,const Audio
     element.setAttribute("trimStart",clip.trimStartFraction);
     element.setAttribute("trimEnd",clip.trimEndFraction);
     element.setAttribute("clipGain",(double)clip.clipGain);
+    element.setAttribute("clipPan",(double)clip.clipPan);
     element.setAttribute("pitchSemitones",clip.pitchSemitones);
     element.setAttribute("reverse",clip.reverse);
     element.setAttribute("muted",clip.muted);
@@ -1694,6 +1695,7 @@ AudioEngine::AudioClipMetadata AudioEngine::readAudioClipProperties(const juce::
     clip.trimStartFraction=element.getDoubleAttribute("trimStart",0.0);
     clip.trimEndFraction=element.getDoubleAttribute("trimEnd",1.0);
     clip.clipGain=(float)element.getDoubleAttribute("clipGain",1.0);
+    clip.clipPan=(float)element.getDoubleAttribute("clipPan",0.0);
     clip.pitchSemitones=element.getDoubleAttribute("pitchSemitones",0.0);
     clip.reverse=element.getBoolAttribute("reverse",false);
     clip.muted=element.getBoolAttribute("muted",false);
@@ -2252,7 +2254,11 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
         const auto gain = laneGain * track.clipGain.load(); const auto pan = lanePan;
         const double clipPitchRatio = std::pow(2.0, track.clipPitch.load() / 12.0);
         const bool clipReversed = track.clipReverse.load();
-        const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
+        // Independent cascaded balance: a centred clip is exactly unity.
+        // Preserve existing track pan law and stereo channel separation.
+        const float clipPan=track.clipPan.load(std::memory_order_relaxed);
+        const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f) * (clipPan>0.f?1.f-clipPan:1.f);
+        const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f) * (clipPan<0.f?1.f+clipPan:1.f);
         const auto sourceChannels = audioBuffer->getNumChannels();
 
         if (!warpActive || rawMarkerCount < 2)

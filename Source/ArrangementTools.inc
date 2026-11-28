@@ -623,6 +623,7 @@ public:
             addAndMakeVisible(control);
         };
         slider(gain,0,400,initial.clipGain*100.0,0.01," %");
+        slider(pan,-100,100,initial.clipPan*100.0,0.1," %");
         slider(pitch,-48,48,initial.pitchSemitones,0.01,
                juce::String::fromUTF8(" demi-tons"));
         slider(fadeIn,0,initial.lengthSeconds,initial.fadeInSeconds,0.001," s");
@@ -657,6 +658,7 @@ public:
     AudioClip values() const {
         auto result=original;
         result.clipGain=(float)(gain.getValue()/100.0);
+        result.clipPan=(float)(pan.getValue()/100.0);
         result.pitchSemitones=pitch.getValue();
         result.fadeInSeconds=fadeIn.getValue();
         result.fadeOutSeconds=fadeOut.getValue();
@@ -673,6 +675,7 @@ public:
         reverse.setToggleState(backwards,juce::sendNotificationSync);
         muted.setToggleState(silent,juce::sendNotificationSync);
     }
+    void setPanForTest(double percent){pan.setValue(percent,juce::sendNotificationSync);}
     bool clickApplyForTest(){
         if(!confirm.onClick)return false;
         confirm.onClick();return true;
@@ -683,17 +686,18 @@ public:
     }
     bool controlsWithinBoundsForTest()const{
         const juce::Component* controls[]={
-            &gain,&pitch,&fadeIn,&fadeOut,&reverse,&muted,&confirm,&cancel};
+            &gain,&pan,&pitch,&fadeIn,&fadeOut,&reverse,&muted,&confirm,&cancel};
         for(const auto* item:controls)
             if(!getLocalBounds().contains(item->getBounds()))return false;
         return true;
     }
     void resized()override{
         const int x=22,w=getWidth()-44;
-        gain.setBounds(x+160,92,w-160,42);
-        pitch.setBounds(x+160,161,w-160,42);
-        fadeIn.setBounds(x+160,230,w-160,42);
-        fadeOut.setBounds(x+160,299,w-160,42);
+        gain.setBounds(x+160,92,w-160,38);
+        pan.setBounds(x+160,145,w-160,38);
+        pitch.setBounds(x+160,198,w-160,38);
+        fadeIn.setBounds(x+160,251,w-160,38);
+        fadeOut.setBounds(x+160,304,w-160,38);
         reverse.setBounds(x,368,w/2-10,30);
         muted.setBounds(x+w/2,368,w/2-10,30);
         cancel.setBounds(getWidth()-276,432,115,40);
@@ -720,11 +724,12 @@ public:
         g.setFont(juce::Font(13.f,juce::Font::bold));
         const juce::String labels[]={
             juce::String::fromUTF8("GAIN DU CLIP"),
+            "PANORAMIQUE",
             juce::String::fromUTF8("TRANSPOSITION"),
             juce::String::fromUTF8("FONDU D’ENTRÉE"),
             juce::String::fromUTF8("FONDU DE SORTIE")};
-        for(int i=0;i<4;++i)
-            g.drawText(labels[i],23,100+69*i,160,25,
+        for(int i=0;i<5;++i)
+            g.drawText(labels[i],23,99+53*i,160,25,
                        juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff8baabb));
         g.setFont(juce::Font(11.f));
@@ -738,7 +743,7 @@ private:
     }
     AudioClip original;
     std::function<bool(const AudioClip&)> apply;
-    juce::Slider gain,pitch,fadeIn,fadeOut;
+    juce::Slider gain,pan,pitch,fadeIn,fadeOut;
     juce::ToggleButton reverse,muted;
     juce::TextButton confirm,cancel;
 };
@@ -766,6 +771,7 @@ bool applyAudioClipEdit(int track,const juce::String& id,const AudioClip& propos
             result=requested;return true;
         };
         if(!merge(opened->clipGain,it->clipGain,proposed.clipGain,merged.clipGain)||
+           !merge(opened->clipPan,it->clipPan,proposed.clipPan,merged.clipPan)||
            !merge(opened->pitchSemitones,it->pitchSemitones,proposed.pitchSemitones,merged.pitchSemitones)||
            !merge(opened->fadeInSeconds,it->fadeInSeconds,proposed.fadeInSeconds,merged.fadeInSeconds)||
            !merge(opened->fadeOutSeconds,it->fadeOutSeconds,proposed.fadeOutSeconds,merged.fadeOutSeconds)||
@@ -773,6 +779,7 @@ bool applyAudioClipEdit(int track,const juce::String& id,const AudioClip& propos
            !merge(opened->muted,it->muted,proposed.muted,merged.muted))return false;
     }
     if(it->clipGain==merged.clipGain
+       &&it->clipPan==merged.clipPan
        &&it->pitchSemitones==merged.pitchSemitones
        &&it->fadeInSeconds==merged.fadeInSeconds
        &&it->fadeOutSeconds==merged.fadeOutSeconds
@@ -780,6 +787,7 @@ bool applyAudioClipEdit(int track,const juce::String& id,const AudioClip& propos
        &&it->muted==merged.muted)return false;
     auto edited=*it;
     edited.clipGain=merged.clipGain;
+    edited.clipPan=merged.clipPan;
     edited.pitchSemitones=merged.pitchSemitones;
     edited.fadeInSeconds=merged.fadeInSeconds;
     edited.fadeOutSeconds=merged.fadeOutSeconds;
@@ -813,7 +821,7 @@ bool showAudioClipEditor(juce::Point<int> p){
         if(!safe)return false;
         if(safe->applyAudioClipEdit(track,id,values,&opened))return true;
         // No-op closes normally, but a conflicting edit requires reopening.
-        if(values.clipGain==opened.clipGain&&values.pitchSemitones==opened.pitchSemitones&&
+        if(values.clipGain==opened.clipGain&&values.clipPan==opened.clipPan&&values.pitchSemitones==opened.pitchSemitones&&
            values.fadeInSeconds==opened.fadeInSeconds&&values.fadeOutSeconds==opened.fadeOutSeconds&&
            values.reverse==opened.reverse&&values.muted==opened.muted)return true;
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
@@ -1519,7 +1527,8 @@ void paintAudioFades(juce::Graphics& g){
 bool applyGroupClipOperation(int command,double value=0.0){
     if(selectionLocked())return false;
     if((command<=34?(command<20?selectedAudio.size()+selectedClipIds.size()<2:selectedAudio.empty()):selectedAudio.empty()&&selectedClipIds.empty())||pendingEdit)return false;
-    if(!std::isfinite(value)||command<0||command>39)return false;
+    if(!std::isfinite(value)||command<0||command>41)return false;
+    if((command==40||command==41)&&(selectedAudio.empty()||value<-100.||value>100.))return false;
     if((command==37||command==38)&&(selectedAudio.empty()||value<-60.||value>12.))return false;
     if(command==39&&(selectedClipIds.empty()||value<-48.||value>48.||std::floor(value)!=value))return false;
     if(command>=24&&command<=26&&(value<-60||value>(command==24?12.:0.)))return false;
@@ -1700,6 +1709,11 @@ bool applyGroupClipOperation(int command,double value=0.0){
                 if(value>clip.lengthSeconds){valid=false;continue;}
                 auto& fade=command==14?clip.fadeInSeconds:clip.fadeOutSeconds;
                 changed=changed||fade!=value;fade=value;touchedAudio.insert(lane);
+            }
+            if(command==40||command==41){
+                const float pan=(float)(value/100.0);
+                const float next=command==40?pan:juce::jlimit(-1.f,1.f,clip.clipPan+pan);
+                changed=changed||next!=clip.clipPan;clip.clipPan=next;touchedAudio.insert(lane);
             }
             if(command==4||command==5||command==15||command==37||command==38){
                 const float factor=(command==15||command==37||command==38)?(float)std::pow(10.0,value/20.0):(command==4?1.41253754f:0.70794578f);
@@ -2747,9 +2761,12 @@ class PermanentGroupManager final:public juce::Component{
         bool hasAudio=false,hasMidi=false;
         for(const auto& key:keys){hasAudio=hasAudio||key.startsWith("audio:");hasMidi=hasMidi||key.startsWith("midi:");}
         auto* dialog=new juce::AlertWindow(juce::String::fromUTF8("Contrôles collectifs"),
-            juce::String::fromUTF8("Gain audio : -60 à +12 dB. MIDI : -48 à +48 demi-tons entiers. Modification statique, annulable."),juce::MessageBoxIconType::NoIcon);
+            juce::String::fromUTF8("Gain : -60 à +12 dB. Pan : -100 à +100 %. MIDI : -48 à +48 demi-tons entiers. Modification statique, annulable."),juce::MessageBoxIconType::NoIcon);
         juce::StringArray labels;std::vector<int> commands;
-        if(hasAudio){labels.add("Gain audio absolu");commands.push_back(37);labels.add("Gain audio relatif");commands.push_back(38);}
+        if(hasAudio){
+            labels.add("Gain audio absolu");commands.push_back(37);labels.add("Gain audio relatif");commands.push_back(38);
+            labels.add("Panoramique absolu (%)");commands.push_back(40);labels.add("Panoramique relatif (%)");commands.push_back(41);
+        }
         if(hasMidi){labels.add("Transposition MIDI");commands.push_back(39);}
         if(commands.empty()){delete dialog;return;}
         dialog->addComboBox("control",labels,juce::String::fromUTF8("Paramètre"));
@@ -3230,6 +3247,42 @@ bool runArrangementTests(){
         AudioClip c;c.id="original";c.sourceName=juce::String::fromUTF8("Échantillon original");c.sourceBuffer=source;c.sourceSampleRate=48000;c.lengthSeconds=1;
         c.clipGain=.7f;c.reverse=true;c.fadeInSeconds=.02;c.fadeOutSeconds=.05;
         require(owner.audioEngine.replaceArrangementAudioClips(0,{c}),"seed audio");
+        {
+            AudioEngine panEngine;
+            auto neutral=c;neutral.reverse=false;neutral.fadeInSeconds=neutral.fadeOutSeconds=0.;
+            neutral.clipGain=1.f;
+            const auto centred=panEngine.renderArrangementAudioClip(neutral);
+            require(centred!=nullptr,"pan centred render");
+            auto left=neutral;left.clipPan=-1.f;
+            const auto l=panEngine.renderArrangementAudioClip(left);
+            auto right=neutral;right.clipPan=1.f;
+            const auto r=panEngine.renderArrangementAudioClip(right);
+            require(l&&r,"pan stereo renders");
+            double signal=0.,error=0.,leak=0.;
+            for(int i=0;i<centred->getNumSamples();++i){
+                signal+=std::abs(centred->getSample(0,i));
+                error+=std::abs(l->getSample(0,i)-centred->getSample(0,i))+std::abs(r->getSample(1,i)-centred->getSample(1,i));
+                leak+=std::abs(l->getSample(1,i))+std::abs(r->getSample(0,i));
+            }
+            require(signal>1.&&error<1.e-5&&leak<1.e-5,"pan hard left right acoustic parity");
+            juce::XmlElement xml("Clip");AudioEngine::writeAudioClipProperties(xml,left);
+            require(AudioEngine::readAudioClipProperties(xml).clipPan==-1.f,"pan XML roundtrip");
+            xml.removeAttribute("clipPan");
+            require(AudioEngine::readAudioClipProperties(xml).clipPan==0.f,"pan legacy default centre");
+            auto invalid=neutral;invalid.clipPan=1.1f;
+            require(!AudioEngine::validAudioClip(invalid),"pan invalid metadata");
+            AudioClipEditPanel panel(neutral,[](const AudioClip&){return true;});
+            panel.setPanForTest(-35.);
+            require(panel.controlsWithinBoundsForTest()&&std::abs(panel.values().clipPan+.35f)<1.e-6,"pan editor binding");
+            require(panEngine.replaceArrangementAudioClips(0,{left}),"pan primary publish");
+            require(panEngine.getArrangementAudioClips(0).front().clipPan==-1.f,"pan primary metadata");
+            panEngine.setTrackPan(0,.5f);
+            juce::AudioBuffer<float> combined(2,2048);
+            require(panEngine.renderOfflineForTesting(combined,48000,128),"pan mixconsole render");
+            double level=0.,other=0.;
+            for(int i=0;i<2048;++i){level+=std::abs(combined.getSample(0,i));other+=std::abs(combined.getSample(1,i));}
+            require(level>1.&&other<1.e-5&&panEngine.getTrackPan(0)==.5f,"pan independent track balance");
+        }
 
         // The clip editor is a real JUCE window with non-destructive controls.
         // Reading controls and cancelling must not touch the audio engine.
@@ -3799,6 +3852,15 @@ bool runArrangementTests(){
             require(undoArrangement(false)&&undoArrangement(false)&&undoArrangement(false),"control undo chain");
             require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().clipGain-initialGain)<1.e-6&&midiClips.front().notes.front().pitch==initialPitch,"control restored baseline");
             require(selectPermanentIds({groupId}),"control restore selection");
+            const auto beforePan=owner.audioEngine.getArrangementAudioClips(0).front().clipPan;
+            require(applyGroupClipOperation(40,-75.),"pan group absolute");
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().clipPan+.75f)<1.e-6,"pan absolute value");
+            require(applyGroupClipOperation(41,100.),"pan group relative");
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().clipPan-.25f)<1.e-6,"pan relative value");
+            require(!applyGroupClipOperation(40,101.),"pan invalid value");
+            require(undoArrangement(false)&&undoArrangement(false),"pan undo chain");
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().clipPan-beforePan)<1.e-6,"pan undo baseline");
+            require(selectPermanentIds({groupId}),"pan restore selection");
         }
         require(applyGroupClipOperation(35)&&midiClips.front().muted&&owner.audioEngine.getArrangementAudioClips(0).front().muted,"group mixed mute");
         require(undoArrangement(false),"undo group mixed mute");
