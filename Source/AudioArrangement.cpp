@@ -257,7 +257,7 @@ std::shared_ptr<juce::AudioBuffer<float>> AudioEngine::renderArrangementAudioCli
         auto output=std::make_shared<juce::AudioBuffer<float>>(2,(int)std::llround(c.lengthSeconds*rate));output->clear();
         for(int offset=0;offset<output->getNumSamples();offset+=256){
             float* channels[]={output->getWritePointer(0,offset),output->getWritePointer(1,offset)};
-            mixAudioVoice(*voice,1,0,rate,offset,channels,2,juce::jmin(256,output->getNumSamples()-offset));
+            mixAudioVoice(*voice,1,0,rate,offset,channels,2,juce::jmin(256,output->getNumSamples()-offset),false);
         }
         return output;
     }catch(...){return {};}

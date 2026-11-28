@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <memory>
 #include <map>
+#include <set>
 #include <vector>
 #include <thread>
 
@@ -248,10 +249,21 @@ public:
         double startSeconds = 0.0;
         double lengthSeconds = 0.0;
         std::vector<MidiEngine::NoteEvent> notes;
+        int arrangementClipId = 0; // zero for legacy/unassigned sources
     };
     void setInstrumentArrangementClips(int instrumentTrack,
                                        const std::vector<InstrumentArrangementClip>& clips,
                                        double tempoBpm) noexcept;
+
+    // Temporary arrangement audition, never serialized or applied to mixer controls.
+    struct GroupAuditionMask {
+        std::set<juce::String> audioIds;
+        std::set<int> instrumentIds;
+    };
+    void setGroupAudition(std::shared_ptr<const GroupAuditionMask>) noexcept;
+    std::shared_ptr<const GroupAuditionMask> getGroupAudition() const noexcept {
+        return std::atomic_load(&groupAudition);
+    }
 
     int getAudioTrackCount() const noexcept;
     int addAudioTrack();
@@ -575,7 +587,8 @@ private:
     };
 
     static std::shared_ptr<AudioTrackState> prepareAudioVoice(const AudioClipMetadata&);
-    void mixAudioVoice(AudioTrackState&,float,float,double,std::int64_t,float* const*,int,int);
+    std::shared_ptr<const GroupAuditionMask> groupAudition;
+    void mixAudioVoice(AudioTrackState&,float,float,double,std::int64_t,float* const*,int,int,bool applyAudition=true);
 
     static constexpr std::size_t maxMidiPlaybackNotes = 256;
     struct MidiPlaybackNote
@@ -594,6 +607,7 @@ private:
         float amplitude = 0.0f;
         int channel = 1;
         int probability = 100;
+        int arrangementClipId = 0;
     };
     struct InstrumentNoteSnapshot
     {

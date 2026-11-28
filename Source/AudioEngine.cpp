@@ -434,6 +434,7 @@ void AudioEngine::setInstrumentArrangementClips(int instrumentTrack,
                     || note.startTick > std::numeric_limits<std::int64_t>::max() - note.lengthTicks)
                     continue;
                 InstrumentPlaybackNote playbackNote;
+                playbackNote.arrangementClipId=clip.arrangementClipId;
                 playbackNote.startSeconds = clip.startSeconds + MidiEngine::tickToSeconds(note.startTick, rate);
                 if (!std::isfinite(playbackNote.startSeconds) || playbackNote.startSeconds >= clipEnd) continue;
                 playbackNote.endSeconds = juce::jmin(clipEnd,
@@ -2188,10 +2189,20 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     deviceRunning.store(true,std::memory_order_release);
 }
 
+void AudioEngine::setGroupAudition(std::shared_ptr<const GroupAuditionMask> mask) noexcept
+{
+    std::atomic_store(&groupAudition,std::move(mask));
+    if(playing.load(std::memory_order_relaxed)){
+        instrumentPanicPending.store(true,std::memory_order_release);
+        instrumentResumePending.store(true,std::memory_order_release);
+    }
+}
 void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lanePan,double rate,
-    std::int64_t position,float* const* outputChannelData,int numOutputChannels,int numSamples)
+    std::int64_t position,float* const* outputChannelData,int numOutputChannels,int numSamples,bool applyAudition)
 {
     if(rate<=0)return;
+    const auto mask=applyAudition?getGroupAudition():std::shared_ptr<const GroupAuditionMask>{};
+    if(mask&&!mask->audioIds.count(track.clipId))return;
     do {
         if (!track.loaded.load(std::memory_order_acquire)) continue;
         const auto audioBuffer = std::atomic_load(&track.buffer);
@@ -2947,6 +2958,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     const bool anyPlaybackSolo = isAnyTrackSolo();
     const auto rate = sampleRate.load();
     auto& pluginHost = LibertyPluginHost::instance();
+    const auto audition=getGroupAudition();
     const bool panicInstruments = instrumentPanicPending.exchange(false, std::memory_order_acq_rel);
     const bool resumeInstruments = instrumentResumePending.exchange(false, std::memory_order_acq_rel);
 
@@ -3079,8 +3091,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const auto arrangementNotes = std::atomic_load(&state.arrangementSnapshot);
             const auto fallbackNotes = std::atomic_load(&state.noteSnapshot);
             // An empty arrangement snapshot must not shadow populated track notes.
-            const auto noteSnapshot = (arrangementNotes != nullptr && !arrangementNotes->notes.empty())
-                ? arrangementNotes : fallbackNotes;
+            const auto noteSnapshot = audition ? arrangementNotes : ((arrangementNotes != nullptr && !arrangementNotes->notes.empty())
+                ? arrangementNotes : fallbackNotes);
             const bool usingArrangementNotes = noteSnapshot == arrangementNotes;
             const auto clipStart = usingArrangementNotes ? 0.0 : state.clipStartSeconds.load(std::memory_order_relaxed);
             if (!hasInstrument) continue;
@@ -3102,6 +3114,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             if (noteSnapshot != nullptr)
             for (const auto& note : noteSnapshot->notes)
             {
+                if(audition&&!audition->instrumentIds.count(note.arrangementClipId))continue;
                 const auto frequency=note.frequency;
                 const auto amplitude=note.amplitude;
                 const int channel=juce::jlimit(1,16,note.channel);
@@ -3138,7 +3151,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             }
             // Controllers share the instrument MIDI buffer with note events.
             // Snapshots are prepared outside the audio callback; no allocations on the audio thread.
-            if (const auto controllers = std::atomic_load(&state.controllerSnapshot))
+            if (!audition) if (const auto controllers = std::atomic_load(&state.controllerSnapshot))
                 for (const auto& event : *controllers)
                 {
                     const double absoluteSeconds = clipStart + event.seconds;

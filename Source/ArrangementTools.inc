@@ -27,6 +27,8 @@ struct PermanentClipGroup {
 std::map<juce::String,PermanentClipGroup> permanentGroups;
 std::map<juce::String,juce::String> memberGroups;
 bool groupingSuspended=false;
+std::set<juce::String> auditionGroups;
+bool isolationMode=false;
 static juce::String audioGroupKey(const juce::String& id){return "audio:"+id;}
 static juce::String midiGroupKey(int id){return "midi:"+juce::String(id);}
 void rebuildGroupIndex(){
@@ -79,6 +81,34 @@ std::set<juce::String> hierarchicalMembers(const std::set<juce::String>& ids)con
     std::set<juce::String> result;
     for(const auto& id:groupDescendants(ids)){const auto& m=permanentGroups.at(id).members;result.insert(m.begin(),m.end());}
     return result;
+}
+void clearGroupAudition(){
+    if(!auditionGroups.empty()||owner.audioEngine.getGroupAudition()){
+        auditionGroups.clear();isolationMode=false;owner.audioEngine.setGroupAudition({});
+        owner.repaint();repaint();
+    }
+}
+bool setGroupAudition(const juce::String& id,bool isolate){
+    if(pendingEdit||!permanentGroups.count(id))return false;
+    const auto members=hierarchicalMembers({id});
+    if(members.empty())return false;
+    auto next=auditionGroups;
+    if(isolate){
+        if(isolationMode&&next.size()==1&&next.count(id)){clearGroupAudition();return true;}
+        next={id};
+    }else{
+        if(isolationMode)next.clear();
+        if(!next.erase(id))next.insert(id);
+    }
+    if(next.empty()){clearGroupAudition();return true;}
+    auto mask=std::make_shared<AudioEngine::GroupAuditionMask>();
+    const auto keys=hierarchicalMembers(next);
+    for(const auto& key:keys)if(key.startsWith("audio:"))mask->audioIds.insert(key.substring(6));
+    for(const auto& clip:instrumentClips)if(keys.count(midiGroupKey(clip.id)))mask->instrumentIds.insert(clip.id);
+    // MIDI-only lanes have no native instrument playback in this engine.
+    if(mask->audioIds.empty()&&mask->instrumentIds.empty())return false;
+    auditionGroups=std::move(next);isolationMode=isolate;
+    owner.audioEngine.setGroupAudition(std::move(mask));owner.repaint();repaint();return true;
 }
 bool subtreeLocked(const juce::String& id)const{
     if(groupLocked(id))return true;
@@ -433,7 +463,7 @@ ArrangementState captureArrangement() {
     }
     return state;
 }
-void beginArrangementEdit(){if(!pendingEdit)pendingEdit=std::make_unique<ArrangementState>(captureArrangement());}
+void beginArrangementEdit(){if(!pendingEdit){clearGroupAudition();pendingEdit=std::make_unique<ArrangementState>(captureArrangement());}}
 void finishArrangementEdit(){
     if(!pendingEdit)return;
     prunePermanentGroups();auto after=captureArrangement();
@@ -449,10 +479,10 @@ void finishArrangementEdit(){
     }
     pendingEdit.reset();
 }
-void clearArrangementHistory(){if(groupManager)groupManager->close();closeSilencePreview();if(smartAnalysisCancel)smartAnalysisCancel->store(true);if(asyncStretchCancel)asyncStretchCancel->store(true);undoEdits.clear();redoEdits.clear();pendingEdit.reset();selectedAudio.clear();audioOrigins.clear();audioClipboardValid=false;audioDragTrack=-1;audioDuplicateId.clear();}
+void clearArrangementHistory(){clearGroupAudition();if(groupManager)groupManager->close();closeSilencePreview();if(smartAnalysisCancel)smartAnalysisCancel->store(true);if(asyncStretchCancel)asyncStretchCancel->store(true);undoEdits.clear();redoEdits.clear();pendingEdit.reset();selectedAudio.clear();audioOrigins.clear();audioClipboardValid=false;audioDragTrack=-1;audioDuplicateId.clear();}
 bool restoreArrangement(const ArrangementState& state){
     if(state.audio.size()!=(size_t)owner.getAudioTrackCount())return false;
-    const auto previous=captureArrangement();
+    clearGroupAudition();const auto previous=captureArrangement();
     for(int t=0;t<owner.getAudioTrackCount();++t){
         if(!owner.audioEngine.replaceArrangementAudioClips(t,state.audio[(size_t)t])){
             for(int back=0;back<t;++back)owner.audioEngine.replaceArrangementAudioClips(back,previous.audio[(size_t)back]);
@@ -2574,7 +2604,7 @@ class PermanentGroupManager final:public juce::Component{
     juce::Label groupPageLabel,memberPageLabel,status;
     juce::TextButton previous{"<"},next{">"},memberPrevious{"<"},memberNext{">"},
         choose{juce::String::fromUTF8("Sélectionner")},chooseAll{juce::String::fromUTF8("Tout sélectionner")},locate{"Localiser"},properties{"Appliquer"},
-        parentButton{juce::String::fromUTF8("Parent…")},fold{juce::String::fromUTF8("Replier")},containerButton{"+ Conteneur"},presetButton{juce::String::fromUTF8("Modèles…")},controlButton{juce::String::fromUTF8("Contrôles…")},lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
+        parentButton{juce::String::fromUTF8("Parent…")},fold{juce::String::fromUTF8("Replier")},containerButton{"+ Conteneur"},presetButton{juce::String::fromUTF8("Modèles…")},controlButton{juce::String::fromUTF8("Contrôles…")},soloButton{"Solo"},isolateButton{"Isoler"},lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
     std::array<juce::TextButton,8> rows;
     std::vector<juce::String> ids;
     std::vector<GroupTreeRow> treeRows;
@@ -2631,6 +2661,16 @@ class PermanentGroupManager final:public juce::Component{
         containerButton.setEnabled(controller->permanentGroups.size()<4096);lock.setEnabled(has&&!controller->groupLocked(has?controller->permanentGroups.at(selected).parent:juce::String{}));parentButton.setEnabled(has&&!locked);
         for(auto* button:{&properties,&dissolve})button->setEnabled(has&&!locked);
         for(auto* button:{&duplicate,&mute,&unmute,&controlButton})button->setEnabled(has&&!locked&&!members.empty());
+        bool audible=false;
+        if(has)for(const auto& member:members)
+            if(member.key.startsWith("audio:")||member.row>=controller->owner.getAudioTrackCount()+controller->owner.getMidiTrackCount()){audible=true;break;}
+        soloButton.setEnabled(audible);isolateButton.setEnabled(audible||!controller->auditionGroups.empty());
+        const bool soloOn=has&&controller->auditionGroups.count(selected)&&!controller->isolationMode;
+        const bool isolationOn=controller->isolationMode&&!controller->auditionGroups.empty();
+        soloButton.setColour(juce::TextButton::buttonColourId,juce::Colour(soloOn?0xffc59432:0xff24384b));
+        isolateButton.setColour(juce::TextButton::buttonColourId,juce::Colour(isolationOn?0xff258eaa:0xff24384b));
+        isolateButton.setButtonText(controller->auditionGroups.empty()?"Isoler":"Fin Solo");
+        if(!controller->auditionGroups.empty()&&!isolationOn)isolateButton.setButtonText("Fin Solo");
         lock.setButtonText(juce::String::fromUTF8(has&&controller->permanentGroups.at(selected).locked?"Déverrouiller":"Verrouiller"));
         status.setText(juce::String((int)ids.size())+juce::String::fromUTF8(" groupes affichés — ")+juce::String((int)members.size())+" membres",juce::dontSendNotification);repaint();
     }
@@ -2777,7 +2817,7 @@ class PermanentGroupManager final:public juce::Component{
     }
 public:
     explicit PermanentGroupManager(MultiMidiClipController* c):controller(c){
-        for(auto* component:std::initializer_list<juce::Component*>{&search,&name,&filter,&colour,&groupPageLabel,&memberPageLabel,&status,&previous,&next,&memberPrevious,&memberNext,&choose,&chooseAll,&locate,&properties,&lock,&duplicate,&mute,&unmute,&dissolve,&parentButton,&fold,&containerButton,&presetButton,&controlButton,&closeButton})addAndMakeVisible(component);
+        for(auto* component:std::initializer_list<juce::Component*>{&search,&name,&filter,&colour,&groupPageLabel,&memberPageLabel,&status,&previous,&next,&memberPrevious,&memberNext,&choose,&chooseAll,&locate,&properties,&lock,&duplicate,&mute,&unmute,&dissolve,&parentButton,&fold,&containerButton,&presetButton,&controlButton,&soloButton,&isolateButton,&closeButton})addAndMakeVisible(component);
         for(size_t i=0;i<rows.size();++i){addAndMakeVisible(rows[i]);rows[i].addMouseListener(this,false);rows[i].onClick=[this,i]{const size_t n=(size_t)page*8+i;if(n<ids.size()){selected=ids[n];memberPage=0;refresh();}};}
         search.setTextToShowWhenEmpty("Rechercher un groupe",juce::Colour(0xff9eb4c5));name.setInputRestrictions(80);
         filter.addItem("Toutes les couleurs",1);filter.addItemList(permanentColourNames(),2);filter.setSelectedId(1,juce::dontSendNotification);
@@ -2790,6 +2830,8 @@ public:
         lock.onClick=[this]{act(3);};duplicate.onClick=[this]{act(4);};mute.onClick=[this]{act(5);};unmute.onClick=[this]{act(6);};dissolve.onClick=[this]{act(7);};
         chooseAll.onClick=[this]{if(controller&&!controller->stopped.load())controller->selectPermanentIds(std::set<juce::String>(ids.begin(),ids.end()));};
         presetButton.onClick=[this]{showStructurePresets();};controlButton.onClick=[this]{showGroupControls();};
+        soloButton.onClick=[this]{if(controller){controller->setGroupAudition(selected,false);refresh();}};
+        isolateButton.onClick=[this]{if(controller){if(!controller->auditionGroups.empty())controller->clearGroupAudition();else controller->setGroupAudition(selected,true);refresh();}};
         containerButton.onClick=[this]{if(!controller||controller->stopped.load())return;
             const auto id=controller->createPermanentContainer();if(id.isEmpty())return;
             search.setText({},false);filter.setSelectedId(1,juce::dontSendNotification);
@@ -2821,7 +2863,7 @@ public:
     }
     void close(){if(auto* w=findParentComponentOfClass<juce::DialogWindow>())w->exitModalState(0);}
     void resized()override{
-        search.setBounds(16,36,350,28);filter.setBounds(382,36,402,28);fold.setBounds(260,66,106,24);containerButton.setBounds(126,66,126,24);presetButton.setBounds(646,66,138,24);controlButton.setBounds(646,4,138,28);
+        search.setBounds(16,36,350,28);filter.setBounds(382,36,402,28);fold.setBounds(260,66,106,24);containerButton.setBounds(126,66,126,24);presetButton.setBounds(646,66,138,24);controlButton.setBounds(646,4,138,28);soloButton.setBounds(440,4,90,28);isolateButton.setBounds(538,4,100,28);
         for(int i=0;i<8;++i)rows[(size_t)i].setBounds(16,92+i*27,350,25);
         previous.setBounds(16,310,36,26);groupPageLabel.setBounds(56,310,270,26);next.setBounds(330,310,36,26);
         memberPrevious.setBounds(382,310,36,26);memberPageLabel.setBounds(422,310,322,26);memberNext.setBounds(748,310,36,26);
@@ -2840,7 +2882,7 @@ public:
     }
     void paint(juce::Graphics& g)override{
         g.fillAll(juce::Colour(0xff101821));g.setColour(juce::Colour(0xffd9eafa));g.setFont(16.f);
-        g.drawText("PROFESSIONAL GROUP MANAGER",16,4,622,28,juce::Justification::centredLeft);
+        g.drawText("PROFESSIONAL GROUP MANAGER",16,4,416,28,juce::Justification::centredLeft);
         g.setFont(13.f);g.drawText("GROUPES",16,66,102,24,juce::Justification::centredLeft);
         g.drawText("MEMBRES",382,66,256,24,juce::Justification::centredLeft);
         for(int i=0;i<8;++i){const auto n=(size_t)(memberPage*8+i);if(n>=members.size())break;
@@ -8550,6 +8592,35 @@ bool runArrangementTests(){
             const auto container=createPermanentContainer();
             require(container.isNotEmpty()&&permanentGroups.at(container).container&&permanentGroups.at(container).members.empty(),"performance empty container");
             require(changeGroupParent(parent,container)&&hierarchicalMembers({container}).size()==4,"performance attach subtree");
+            {
+                const auto before=captureArrangement().signature;
+                require(setGroupAudition(child,false),"audition child solo");
+                const auto mask=owner.audioEngine.getGroupAudition();
+                require(mask&&mask->audioIds.size()==2&&mask->audioIds.count(regions[2].id)&&!mask->audioIds.count(regions[0].id),"audition child mask");
+                require(setGroupAudition(parent,false)&&owner.audioEngine.getGroupAudition()->audioIds.size()==4,"audition additive parent");
+                require(setGroupAudition(child,true)&&isolationMode&&owner.audioEngine.getGroupAudition()->audioIds.size()==2,"audition isolation");
+                require(captureArrangement().signature==before,"audition never changes project");
+                clearGroupAudition();
+                require(!owner.audioEngine.getGroupAudition()&&captureArrangement().signature==before,"audition exact restore");
+                // Dedicated engine: two simultaneous sources on one track.
+                AudioEngine auditionEngine;
+                auto left=regions[0],right=regions[2];
+                left.startSeconds=right.startSeconds=0.;left.lengthSeconds=right.lengthSeconds=.1;
+                left.clipGain=right.clipGain=1.f;left.muted=right.muted=false;
+                left.offsetSeconds=right.offsetSeconds=0.;left.fadeInSeconds=right.fadeInSeconds=0.;
+                left.fadeOutSeconds=right.fadeOutSeconds=0.;
+                require(auditionEngine.replaceArrangementAudioClips(0,{left,right}),"audition audio fixture");
+                juce::AudioBuffer<float> all(2,2048),one(2,2048),restored(2,2048);
+                require(auditionEngine.renderOfflineForTesting(all,48000,128),"audition baseline render");
+                auto single=std::make_shared<AudioEngine::GroupAuditionMask>();single->audioIds.insert(left.id);
+                auditionEngine.setGroupAudition(single);
+                require(auditionEngine.renderOfflineForTesting(one,48000,128),"audition filtered render");
+                auditionEngine.setGroupAudition({});
+                require(auditionEngine.renderOfflineForTesting(restored,48000,128),"audition restored render");
+                double difference=0.,error=0.;
+                for(int i=0;i<2048;++i){difference+=std::abs(all.getSample(0,i)-one.getSample(0,i));error+=std::abs(all.getSample(0,i)-restored.getSample(0,i));}
+                require(difference>1.&&error<.01,"audition acoustic filtering and restoration");
+            }
             require(!changeGroupParent(container,child),"performance container cycle rejection");
             require(editPermanentGroup(56,{},0,container)&&lockedMember(audioGroupKey(regions[2].id)),"performance container inherited lock");
             require(!changeGroupParent(child,{}),"performance locked reparent refusal");
